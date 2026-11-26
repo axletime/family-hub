@@ -28,6 +28,7 @@ interface Env {
   lidarrKeySet: boolean;
   plexTokenSet: boolean;
   haTokenSet: boolean;
+  tmdbKeySet: boolean;
   cookieSecure: boolean;
 }
 
@@ -84,11 +85,11 @@ export default function SettingsPage() {
 
       {msg && (msg.ok ? <p className="rounded-xl bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">{msg.text}</p> : <ErrorNote>{msg.text}</ErrorNote>)}
 
-      <section className="card flex items-start gap-4 p-5">
+      <section className="card flex items-start gap-4 p-4 sm:p-5">
         <div className="flex-1">
           <h2 className="font-semibold">Require admin approval</h2>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            When on, requests from family members wait in <a href="/admin/requests" className="link">All requests</a> until an admin approves them. When off, requests go straight to Sonarr, Radarr or Lidarr. Admins’ own requests are always sent straight away.
+            When on, requests from family members wait in <a href="/admin/requests" className="link py-3">All requests</a> until an admin approves them. When off, requests go straight to Sonarr, Radarr or Lidarr. Admins’ own requests are always sent straight away.
           </p>
         </div>
         <Toggle label="Require admin approval" checked={s.requireApproval} disabled={saving} onChange={(v) => save({ requireApproval: v })} />
@@ -158,7 +159,7 @@ export default function SettingsPage() {
 
       <section className="card space-y-3 p-5">
         <h2 className="font-semibold">Home Assistant entities</h2>
-        <p className="text-sm text-slate-500 dark:text-slate-400">
+        <p className="break-words text-sm text-slate-500 dark:text-slate-400">
           One entity ID per line, in the order you want them shown — e.g. <code>light.living_room</code>, <code>switch.kettle</code>, <code>sensor.outdoor_temperature</code>, <code>climate.hallway</code>, <code>person.andrew</code>. Lights, switches, fans and input booleans get a toggle; everything else is shown as a reading. Find IDs in Home Assistant under Settings › Devices &amp; services › Entities.
         </p>
         <textarea className="input min-h-[180px] font-mono" value={entitiesText} onChange={(e) => setEntitiesText(e.target.value)} spellCheck={false} />
@@ -178,6 +179,7 @@ export default function SettingsPage() {
             ['Lidarr', env.lidarrUrl, env.lidarrKeySet, 'API key'],
             ['Plex', env.plexUrl, env.plexTokenSet, 'token (optional)'],
             ['Home Assistant', env.haUrl, env.haTokenSet, 'token'],
+            ['TMDB (recommendations)', 'api.themoviedb.org', env.tmdbKeySet, 'API key (optional)'],
           ].map(([n, url, set, what]) => (
             <div key={n as string} className="rounded-xl bg-slate-100 p-3 dark:bg-white/5">
               <dt className="font-medium">{n as string}</dt>

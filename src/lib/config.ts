@@ -85,6 +85,8 @@ export function getConfig() {
         .map((s) => s.trim())
         .filter(Boolean),
     },
+    tmdb: { apiKey: str('TMDB_API_KEY'), region: str('TMDB_REGION', 'GB'), language: str('TMDB_LANGUAGE', 'en-GB') },
+    recCacheHours: int('REC_CACHE_HOURS') ?? 6,
     requestTimeoutMs: int('SERVICE_TIMEOUT_MS') ?? 8000,
   };
 }

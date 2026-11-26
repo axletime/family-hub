@@ -184,24 +184,54 @@ export interface LibraryEntry {
   available: boolean;
 }
 
-const libraryCache = new Map<ArrKind, { at: number; map: Map<string, LibraryEntry> }>();
+const libraryCache = new Map<ArrKind, { at: number; raw: Any[]; map: Map<string, LibraryEntry> }>();
+
+async function loadLibrary(kind: ArrKind, maxAgeMs: number) {
+  const cached = libraryCache.get(kind);
+  if (cached && Date.now() - cached.at < maxAgeMs) return cached;
+  const path = kind === 'radarr' ? '/movie' : kind === 'sonarr' ? '/series' : '/artist';
+  const raw: Any[] = (await arr<Any[]>(kind, path)) ?? [];
+  const map = new Map<string, LibraryEntry>();
+  for (const i of raw) {
+    if (kind === 'radarr') map.set(String(i.tmdbId), { arrId: i.id, available: Boolean(i.hasFile) });
+    else if (kind === 'sonarr') map.set(String(i.tvdbId), { arrId: i.id, available: (i.statistics?.episodeFileCount ?? 0) > 0 });
+    else map.set(String(i.foreignArtistId), { arrId: i.id, available: (i.statistics?.trackFileCount ?? 0) > 0 });
+  }
+  const entry = { at: Date.now(), raw, map };
+  libraryCache.set(kind, entry);
+  return entry;
+}
 
 /** Map of external id (tmdbId / tvdbId / MusicBrainz id) -> library entry. Cached briefly. */
 export async function getLibrary(kind: ArrKind, maxAgeMs = 60000): Promise<Map<string, LibraryEntry>> {
-  const cached = libraryCache.get(kind);
-  if (cached && Date.now() - cached.at < maxAgeMs) return cached.map;
-  const map = new Map<string, LibraryEntry>();
-  if (kind === 'radarr') {
-    for (const m of (await arr<Any[]>('radarr', '/movie')) ?? []) map.set(String(m.tmdbId), { arrId: m.id, available: Boolean(m.hasFile) });
-  } else if (kind === 'sonarr') {
-    for (const s of (await arr<Any[]>('sonarr', '/series')) ?? [])
-      map.set(String(s.tvdbId), { arrId: s.id, available: (s.statistics?.episodeFileCount ?? 0) > 0 });
-  } else {
-    for (const a of (await arr<Any[]>('lidarr', '/artist')) ?? [])
-      map.set(String(a.foreignArtistId), { arrId: a.id, available: (a.statistics?.trackFileCount ?? 0) > 0 });
-  }
-  libraryCache.set(kind, { at: Date.now(), map });
-  return map;
+  return (await loadLibrary(kind, maxAgeMs)).map;
+}
+
+export interface LibrarySeed {
+  title: string;
+  tmdbId?: number;
+  tvdbId?: number;
+  added?: string;
+  genres: string[];
+}
+
+/** Library titles (newest first) used as seeds for recommendations. */
+export async function getLibrarySeeds(kind: 'sonarr' | 'radarr'): Promise<LibrarySeed[]> {
+  const { raw } = await loadLibrary(kind, 5 * 60000);
+  return raw
+    .map((i) => ({
+      title: i.title as string,
+      tmdbId: i.tmdbId || undefined,
+      tvdbId: i.tvdbId || undefined,
+      added: i.added as string | undefined,
+      genres: Array.isArray(i.genres) ? i.genres : [],
+    }))
+    .sort((a, b) => (b.added ?? '').localeCompare(a.added ?? ''));
+}
+
+/** Radarr's built-in Discover list (no API key needed beyond Radarr's own). */
+export async function getRadarrDiscover(): Promise<Any[]> {
+  return (await arr<Any[]>('radarr', '/importlist/movie?includeRecommendations=true&includeTrending=true&includePopular=true')) ?? [];
 }
 
 export function invalidateLibrary(kind: ArrKind) {

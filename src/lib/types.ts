@@ -100,3 +100,33 @@ export interface PublicProfile {
   colour: string;
   role: 'admin' | 'member';
 }
+
+export type RecMediaType = 'movie' | 'tv';
+export type RecSource = 'tmdb' | 'tvmaze' | 'radarr' | 'demo' | 'none';
+
+export interface RecItem {
+  mediaType: RecMediaType;
+  /** TVDB id for TV (what Sonarr uses), TMDB id for films (what Radarr uses). */
+  externalId: string;
+  title: string;
+  year: number | null;
+  overview: string;
+  poster: string | null;
+  rating?: number | null;
+}
+
+export interface RecSection {
+  id: string;
+  title: string;
+  items: RecItem[];
+}
+
+export interface RecResponse {
+  mediaType: RecMediaType;
+  source: RecSource;
+  sections: RecSection[];
+  /** Shown to admins only, e.g. how to enable better recommendations. */
+  hint?: string;
+  error?: string;
+  generatedAt?: string;
+}

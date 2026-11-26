@@ -26,7 +26,7 @@ export default function AllRequestsPage() {
         <h1 className="text-2xl font-bold sm:text-3xl">All requests</h1>
         <p className="text-slate-500 dark:text-slate-400">Approve, decline or tidy up the family’s requests.</p>
       </div>
-      <div className="scrollbar-thin flex gap-2 overflow-x-auto pb-1">
+      <div className="flex flex-wrap gap-2">
         {FILTERS.map((f) => (
           <button key={f.value} onClick={() => setFilter(f.value)} className={`${filter === f.value ? 'btn-primary' : 'btn-ghost'} shrink-0 px-3 py-1.5`}>
             {f.label}

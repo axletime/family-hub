@@ -60,6 +60,14 @@ const MOVIES: DemoItem[] = [
   { externalId: '1008', title: 'Midnight Express Delivery', year: 2024, overview: 'A courier with a strict no-questions policy finally opens one of his packages.', meta: '104 min · Action' },
   { externalId: '1009', title: 'The Last Ceilidh', year: 2021, overview: 'A small-town dance hall faces closure, and the community rallies for one final night.', meta: '95 min · Comedy, Music' },
   { externalId: '1010', title: 'Quantum Garden', year: 2026, overview: 'A botanist discovers that her greenhouse exists in two timelines at once.', meta: '121 min · Science Fiction' },
+  { externalId: '1011', title: 'The Bear Who Came to Tea', year: 2025, overview: 'A family’s quiet Sunday is turned upside down when a very polite bear knocks on the door.', meta: '92 min · Family, Animation' },
+  { externalId: '1012', title: 'Coastal Path', year: 2024, overview: 'Two estranged sisters walk the Cornish coast to scatter their mother’s ashes, and discover what she never told them.', meta: '109 min · Drama' },
+  { externalId: '1013', title: 'Penguin Patrol', year: 2026, overview: 'A team of Antarctic researchers adopt an orphaned penguin chick in this heartwarming true story.', meta: '98 min · Family, Documentary' },
+  { externalId: '1014', title: 'Iron Tide', year: 2025, overview: 'A North Sea oil rig crew fight to survive the storm of the century.', meta: '127 min · Action, Thriller' },
+  { externalId: '1015', title: 'The Wizard’s Apprentice', year: 2026, overview: 'A clumsy apprentice must finish her master’s greatest spell before midsummer.', meta: '115 min · Fantasy, Family' },
+  { externalId: '1016', title: 'Murder at Ravenscourt', year: 2025, overview: 'A snowbound country house, a family reunion and a body in the library. Classic whodunnit fun.', meta: '106 min · Mystery, Comedy' },
+  { externalId: '1017', title: 'Edge of the Map', year: 2024, overview: 'An explorer retraces her grandfather’s doomed Arctic expedition.', meta: '119 min · Adventure' },
+  { externalId: '1018', title: 'Robots of Rothesay', year: 2026, overview: 'On the Isle of Bute, a lonely inventor builds a friend, then twelve more.', meta: '94 min · Comedy, Science Fiction' },
 ];
 
 const SHOWS: DemoItem[] = [
@@ -71,6 +79,14 @@ const SHOWS: DemoItem[] = [
   { externalId: '2006', title: 'Northern Lights', year: 2023, overview: 'A family-run hotel in Tromsø hides secrets as dark as the polar night.', meta: 'Netflix · 2 seasons · Ended' },
   { externalId: '2007', title: 'Robot Wars Reloaded', year: 2026, overview: 'Home-built robots fight it out in the arena once more.', meta: 'BBC Two · 1 season · Continuing' },
   { externalId: '2008', title: 'The Crown Estate', year: 2022, overview: 'A sweeping drama about the staff of a grand country house.', meta: 'ITV · 3 seasons · Ended' },
+  { externalId: '2009', title: 'Vera', year: 2011, overview: 'DCI Vera Stanhope, a tenacious detective in Northumberland, solves crimes with her own unique style.', meta: 'ITV · 14 seasons · Ended' },
+  { externalId: '2010', title: 'Hebridean Hearts', year: 2025, overview: 'A city doctor takes over the only surgery on a tiny Hebridean island.', meta: 'BBC One · 2 seasons · Continuing' },
+  { externalId: '2011', title: 'The Repair Shed', year: 2017, overview: 'Expert craftspeople bring treasured family heirlooms back to life.', meta: 'BBC One · 12 seasons · Continuing' },
+  { externalId: '2012', title: 'Puffin Rock Adventures', year: 2024, overview: 'Oona the puffin and her little brother Baba explore their island home.', meta: 'CBeebies · 3 seasons · Continuing' },
+  { externalId: '2013', title: 'Deep Water Station', year: 2026, overview: 'Mysteries pile up at a remote research base on the seabed of the North Atlantic.', meta: 'Channel 4 · 1 season · Continuing' },
+  { externalId: '2014', title: 'Taskmaster Junior', year: 2025, overview: 'Young comedians take on absurd challenges set by a stern judge.', meta: 'Channel 4 · 2 seasons · Continuing' },
+  { externalId: '2015', title: 'Line of Inquiry', year: 2023, overview: 'An anti-corruption unit investigates a police force with something to hide.', meta: 'BBC One · 3 seasons · Continuing' },
+  { externalId: '2016', title: 'Grand Designs: Scotland', year: 2026, overview: 'Ambitious self-builders take on the Highlands weather.', meta: 'Channel 4 · 1 season · Continuing' },
 ];
 
 const ARTISTS: DemoItem[] = [
@@ -260,4 +276,32 @@ export function demoHaEntities(ids: string[]): HaEntity[] {
 export function demoHaToggle(id: string) {
   const e = haStore().get(id);
   if (e) e.state = e.state === 'on' ? 'off' : 'on';
+}
+
+/* ---------------- Recommendations ---------------- */
+
+const REC_SECTIONS: Record<'radarr' | 'sonarr', { id: string; title: string; ids: string[] }[]> = {
+  sonarr: [
+    { id: 'because-2005', title: 'Because you have Shetland', ids: ['2009', '2015', '2001', '2013', '2006'] },
+    { id: 'because-2004', title: 'Because you have Bluey', ids: ['2012', '2014', '2007', '2011'] },
+    { id: 'trending', title: 'Trending this week', ids: ['2010', '2003', '2016', '2008', '2013', '2014', '2002'] },
+  ],
+  radarr: [
+    { id: 'because-1003', title: 'Because you have Paddington in Peru', ids: ['1011', '1013', '1015', '1007', '1018'] },
+    { id: 'because-1009', title: 'Because you have The Last Ceilidh', ids: ['1012', '1005', '1016', '1001'] },
+    { id: 'trending', title: 'Trending this week', ids: ['1014', '1002', '1017', '1008', '1010', '1004'] },
+  ],
+};
+
+/** Raw demo recommendation sections (library / request filtering happens in recommend.ts). */
+export function demoRecommendations(kind: 'radarr' | 'sonarr') {
+  const mediaType = kind === 'radarr' ? ('movie' as const) : ('tv' as const);
+  return REC_SECTIONS[kind].map((sec) => ({
+    id: sec.id,
+    title: sec.title,
+    items: sec.ids
+      .map((id) => demoFind(kind, id))
+      .filter((i): i is DemoItem => Boolean(i))
+      .map((i) => ({ mediaType, externalId: i.externalId, title: i.title, year: i.year, overview: i.overview, poster: demoPoster(i.title), rating: null })),
+  }));
 }

@@ -22,6 +22,7 @@ function view() {
       lidarrKeySet: Boolean(cfg.lidarr.apiKey),
       plexTokenSet: Boolean(cfg.plex.token),
       haTokenSet: Boolean(cfg.ha.token),
+      tmdbKeySet: Boolean(cfg.tmdb.apiKey),
       cookieSecure: cfg.cookieSecure,
     },
   };

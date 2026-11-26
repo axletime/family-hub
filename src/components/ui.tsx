@@ -29,6 +29,7 @@ const PATHS: Record<string, string> = {
   x: 'M18.3 5.7 12 12l6.3 6.3-1.4 1.4L10.6 13.4 4.3 19.7l-1.4-1.4L9.2 12 2.9 5.7l1.4-1.4 6.3 6.3 6.3-6.3z',
   trash: 'M9 3h6l1 2h4v2H4V5h4zM6 9h12l-1 12H7z',
   plus: 'M11 4h2v7h7v2h-7v7h-2v-7H4v-2h7z',
+  more: 'M5 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm7 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm7 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4z',
   refresh: 'M17.7 6.3A8 8 0 1 0 20 12h-2a6 6 0 1 1-1.8-4.2L13 11h7V4z',
 };
 
@@ -116,7 +117,7 @@ export function Toggle({ checked, onChange, disabled, label }: { checked: boolea
       aria-label={label}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition disabled:opacity-50 ${checked ? 'bg-accent-500' : 'bg-slate-300 dark:bg-slate-600'}`}
+      className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition after:absolute after:-inset-2 after:content-[''] disabled:opacity-50 ${checked ? 'bg-accent-500' : 'bg-slate-300 dark:bg-slate-600'}`}
     >
       <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition ${checked ? 'translate-x-6' : 'translate-x-1'}`} />
     </button>

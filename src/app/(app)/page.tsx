@@ -4,6 +4,7 @@ import type { CalendarItem, HaEntity, MediaOverview, ServiceStatus } from '@/lib
 import { api, useApi } from '@/components/api';
 import { Empty, ErrorNote, Icon, Poster, Spinner, Toggle } from '@/components/ui';
 import { formatBytes, relativeDay, timeAgo } from '@/components/format';
+import { RecRow } from '@/components/Recommendations';
 
 const SERVICE_ICON: Record<string, string> = { sonarr: 'tv', radarr: 'film', lidarr: 'music', plex: 'sparkle', homeassistant: 'home' };
 const SERVICE_COLOUR: Record<string, string> = { sonarr: '#35C5F4', radarr: '#FFC230', lidarr: '#00A65B', plex: '#E5A00D', homeassistant: '#18BCF2' };
@@ -14,11 +15,11 @@ function greeting() {
 }
 
 function StatusTiles({ services }: { services: ServiceStatus[] | undefined }) {
-  if (!services) return <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="card h-[84px] animate-pulse" />)}</div>;
+  if (!services) return <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-5">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="card h-[84px] animate-pulse" />)}</div>;
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-5">
       {services.map((s) => (
-        <a key={s.id} href={s.link} target="_blank" rel="noreferrer" className="card group flex items-center gap-3 p-4 transition hover:border-accent-400" title={s.message ?? (s.online ? 'Online' : 'Offline')}>
+        <a key={s.id} href={s.link} target="_blank" rel="noreferrer" className="card group flex items-center gap-3 p-3 transition hover:border-accent-400 sm:p-4" title={s.message ?? (s.online ? 'Online' : 'Offline')}>
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl" style={{ backgroundColor: `${SERVICE_COLOUR[s.id]}22`, color: SERVICE_COLOUR[s.id] }}>
             <Icon name={SERVICE_ICON[s.id]} className="h-6 w-6" />
           </span>
@@ -143,22 +144,22 @@ export default function Dashboard() {
           <h1 className="text-2xl font-bold sm:text-3xl">{greeting()}</h1>
           <p className="text-slate-500 dark:text-slate-400">{new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
         </div>
-        <a href="/request" className="btn-primary"><Icon name="search" className="h-4 w-4" /> Request something</a>
+        <a href="/request" className="btn-primary w-full sm:w-auto"><Icon name="search" className="h-4 w-4" /> Request something</a>
       </div>
 
       <StatusTiles services={status.data?.services} />
       {m && m.errors.length > 0 && <ErrorNote>Some services could not be reached: {m.errors.join(' · ')}</ErrorNote>}
 
-      <div className="grid gap-6 xl:grid-cols-3">
-        <div className="space-y-6 xl:col-span-2">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3 [&>*]:min-w-0">
+        <div className="min-w-0 space-y-6 xl:col-span-2">
           <section className="card p-4">
             <h2 className="card-title mb-3"><span className="flex items-center gap-2"><Icon name="download" className="h-4 w-4" /> Downloading now</span>{m && <span className="normal-case">{m.queue.length} in queue</span>}</h2>
             {!m ? <Spinner /> : !m.queue.length ? <Empty>Nothing downloading right now.</Empty> : (
               <ul className="space-y-3">
                 {m.queue.slice(0, 12).map((q) => (
                   <li key={q.id}>
-                    <div className="flex items-baseline justify-between gap-2 text-sm">
-                      <span className="min-w-0 truncate"><span className="font-medium">{q.title}</span>{q.subtitle && <span className="text-slate-500 dark:text-slate-400"> · {q.subtitle}</span>}</span>
+                    <div className="flex flex-col gap-0.5 text-sm sm:flex-row sm:items-baseline sm:justify-between sm:gap-2">
+                      <span className="min-w-0 sm:truncate"><span className="font-medium">{q.title}</span>{q.subtitle && <span className="text-slate-500 dark:text-slate-400"> · {q.subtitle}</span>}</span>
                       <span className="shrink-0 text-xs text-slate-500 dark:text-slate-400">{q.progress.toFixed(0)}%{q.timeLeft ? ` · ${q.timeLeft} left` : ''}{q.sizeBytes ? ` · ${formatBytes(q.sizeBytes)}` : ''}</span>
                     </div>
                     <div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-white/10">
@@ -186,10 +187,13 @@ export default function Dashboard() {
             )}
           </section>
 
-          <div className="grid gap-6 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 [&>*]:min-w-0">
             <Calendar title="Upcoming TV" icon="tv" items={m?.upcomingTv} empty="No episodes in the next fortnight." />
             <Calendar title="Upcoming films" icon="film" items={m?.upcomingMovies} empty="No film releases in the next two months." />
           </div>
+
+          <RecRow type="tv" title="TV shows you may enjoy" />
+          <RecRow type="movie" title="Films you may enjoy" />
         </div>
 
         <div className="space-y-6">
@@ -198,7 +202,7 @@ export default function Dashboard() {
             <h2 className="card-title mb-3"><span className="flex items-center gap-2"><Icon name="link" className="h-4 w-4" /> Quick links</span></h2>
             <div className="grid grid-cols-2 gap-2">
               {(status.data?.services ?? []).map((s) => (
-                <a key={s.id} href={s.link} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded-xl border border-slate-200 p-3 text-sm font-medium hover:border-accent-400 dark:border-white/10">
+                <a key={s.id} href={s.link} target="_blank" rel="noreferrer" className="flex min-h-[44px] items-center gap-2 rounded-xl border border-slate-200 p-3 text-sm font-medium hover:border-accent-400 dark:border-white/10">
                   <Icon name={SERVICE_ICON[s.id]} className="h-4 w-4" />
                   {s.name}
                 </a>

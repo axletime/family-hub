@@ -33,6 +33,8 @@ The plan is to run Family Hub on the **currently unused Unraid server at `192.16
   - **On:** requests wait for an admin to approve them. Admins' own requests always go straight through.
 - **My requests and All requests** pages show each request's status: *pending, approved, downloading, available, declined* (and *failed*, with the error and a Retry button). The status is updated live from the *arr libraries and queues.
 - **Everything runs server-side.** Sonarr, Radarr, Lidarr, Plex and Home Assistant are only ever called from the container. API keys and tokens never reach the browser.
+- **Recommendations.** "TV shows you may enjoy" and "Films you may enjoy" rows on the dashboard, plus a fuller **Discover** page. They're based on what's already in Sonarr and Radarr ("Because you have Shetland") plus what's trending this week. Each card has a poster, year, short overview and a **Request** button that uses the normal request flow, so the approval toggle and duplicate checks still apply. Anything already in the library or already requested is left out.
+- **Phone-friendly, installable app.** A bottom tab bar on phones (with a **More** sheet for admin pages, account and sign-out), large tap targets, iPhone notch support, and no zooming into text boxes. Add it to your home screen and it opens full-screen like an app (see *Add to your phone's home screen* below).
 - **Looks and works on any screen:** responsive for phones, tablets, desktops and TVs. Dark theme by default with a light option. Accent colour `#1B4F8A`.
 - **Demo mode** (`DEMO_MODE=true`) shows realistic mock data, so you can try the UI before connecting anything.
 
@@ -60,6 +62,21 @@ To find entity IDs, go to **Settings › Devices & services › Entities** in Ho
 
 ### Plex (optional)
 Family Hub checks `PLEX_URL/identity`, which normally works without a token. If your server needs one, see Plex's guide *"Finding an authentication token / X-Plex-Token"* and set `PLEX_TOKEN`.
+
+### TMDB (optional, for better recommendations)
+Recommendations work without this, but a free TMDB key gives the personalised "Because you have …" rows for both TV and films.
+
+1. Create a free account at [themoviedb.org](https://www.themoviedb.org/signup) and confirm your email.
+2. Click your avatar › **Settings** › **API** (or go to `https://www.themoviedb.org/settings/api`).
+3. Click **Create** / **Request an API key**, choose **Developer**, accept the terms and fill in the short form. For personal use, "Family Hub – home media requests" is fine as the description, and you can use any URL (e.g. `http://192.168.1.201:3000`).
+4. Copy the **API Key** (the short one). The long **API Read Access Token** also works.
+5. Put it in `.env` as `TMDB_API_KEY=...`, then rebuild and restart (see *Updating*).
+
+Admin › Settings shows whether the key is set. The key is only used by the server, and results are cached for 6 hours (`REC_CACHE_HOURS`).
+
+**Without a key:** TV recommendations come from TVmaze (no key needed) and film recommendations come from Radarr's own discover lists. If neither is available, admins see a hint on the Discover page and the dashboard carries on as normal.
+
+Requests from recommendations go through Sonarr/Radarr lookups (TVDB ID for Sonarr, TMDB ID for Radarr), exactly like a normal search.
 
 ---
 
@@ -132,7 +149,23 @@ docker compose up -d --build
 > The container runs as `nobody:users` (99:100), the usual Unraid convention. If you created the appdata folder by hand as root and the container can't write to it, run `chown -R 99:100 /mnt/user/appdata/family-hub`.
 
 ### Updating
-Copy the new source over the old, then run `docker compose up -d --build` (Method A) or rebuild the image and click **Force update** in the Docker tab (Method B). Your family members, PINs, requests and settings are kept in `/data`.
+Copy the new source over the old one in `/mnt/user/appdata/family-hub-src` (keep your `.env`), then run these three commands in the Unraid terminal:
+
+```bash
+cd /mnt/user/appdata/family-hub-src && docker build -t family-hub .
+docker rm -f family-hub
+docker run -d --name family-hub --restart unless-stopped -p 3000:3000 -v /mnt/user/appdata/family-hub-data:/data --env-file /mnt/user/appdata/family-hub-src/.env family-hub
+```
+
+Your family members, PINs, requests and settings live in `/mnt/user/appdata/family-hub-data` (mounted as `/data`), so removing and re-creating the container doesn't lose anything. If you use Docker Compose instead, `docker compose up -d --build` does the same.
+
+### Add to your phone's home screen
+Open `http://192.168.1.201:3000` on the phone (it needs to be on your home Wi-Fi), then:
+
+- **iPhone / iPad (Safari):** tap **Share** › **Add to Home Screen** › **Add**.
+- **Android (Chrome):** tap the **⋮** menu › **Install app** (or **Add to Home screen**).
+
+It opens full-screen with the Family Hub icon, like a normal app. Everyone still signs in with their own PIN.
 
 ---
 
@@ -175,6 +208,9 @@ All settings are environment variables. See `.env.example` for the full annotate
 | `PLEX_URL` / `PLEX_TOKEN` | `http://192.168.1.202:32400` / – | |
 | `HA_URL` / `HA_TOKEN` / `HA_ENTITIES` | placeholder / – / – | |
 | `*_PUBLIC_URL` | same as the URL | Link used on the dashboard, if different |
+| `TMDB_API_KEY` | – | Optional. Better recommendations (see *TMDB* above) |
+| `TMDB_REGION` / `TMDB_LANGUAGE` | `GB` / `en-GB` | Region and language for TMDB results |
+| `REC_CACHE_HOURS` | `6` | How long recommendations are cached |
 | `DATA_DIR` | `/data` | Where the SQLite database lives |
 
 ---
@@ -194,6 +230,8 @@ All settings are environment variables. See `.env.example` for the full annotate
 - **A tile says Offline.** Hover over it to see the error, e.g. `unreachable (ECONNREFUSED)` or `HTTP 401`. A 401 means the API key is wrong. Check that the URL works from the Family Hub server: `curl http://192.168.1.200:8989/ping`.
 - **A request shows "Failed".** The error is shown on the request, e.g. no root folder or a profile problem. Fix it in Admin › Settings, then press **Retry** on the All requests page.
 - **Forgotten admin PIN.** If another admin exists, they can reset it. Otherwise stop the container, delete `/mnt/user/appdata/family-hub/family-hub.db*`, set `ADMIN_PIN` and start again. This removes all profiles and requests.
+- **No recommendations, or only TV ones.** Check Admin › Settings › TMDB. Without a key, films need Radarr to be connected. A wrong key shows as a hint on the Discover page (for admins), and TV falls back to TVmaze.
+- **The phone layout looks old after updating.** Close the home-screen app fully and reopen it, or refresh the page in the browser.
 - **"Home Assistant is not configured".** Set both `HA_URL` and `HA_TOKEN`, then restart the container.
 
 ---

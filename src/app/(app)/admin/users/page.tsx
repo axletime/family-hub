@@ -19,7 +19,7 @@ function ColourPicker({ value, onChange }: { value: string; onChange: (c: string
   return (
     <div className="flex flex-wrap gap-2">
       {COLOURS.map((c) => (
-        <button type="button" key={c} onClick={() => onChange(c)} aria-label={`Colour ${c}`} className={`h-7 w-7 rounded-full ring-offset-2 ring-offset-white dark:ring-offset-[#111a2e] ${value === c ? 'ring-2 ring-accent-400' : ''}`} style={{ backgroundColor: c }} />
+        <button type="button" key={c} onClick={() => onChange(c)} aria-label={`Colour ${c}`} className={`h-11 w-11 rounded-full ring-offset-2 md:h-7 md:w-7 ring-offset-white dark:ring-offset-[#111a2e] ${value === c ? 'ring-2 ring-accent-400' : ''}`} style={{ backgroundColor: c }} />
       ))}
     </div>
   );

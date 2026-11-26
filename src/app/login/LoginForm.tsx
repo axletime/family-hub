@@ -55,11 +55,11 @@ export default function LoginForm() {
   });
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <div className="flex justify-end p-4">
+    <div className="pt-safe pb-safe px-safe flex min-h-screen flex-col">
+      <div className="flex justify-end py-3">
         <ThemeToggle />
       </div>
-      <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col items-center justify-center px-4 pb-16">
+      <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col items-center justify-center pb-10 sm:pb-16">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/icon.svg" alt="" className="mb-4 h-16 w-16" />
         <h1 className="text-3xl font-bold">Family Hub</h1>
@@ -110,7 +110,7 @@ export default function LoginForm() {
                 setPin('');
                 setError(null);
               }}
-              className="mt-6 text-sm text-slate-500 hover:underline dark:text-slate-400"
+              className="mt-4 min-h-[44px] px-3 text-sm text-slate-500 hover:underline dark:text-slate-400"
             >
               Not {selected.name}? Choose another profile
             </button>
