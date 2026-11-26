@@ -283,6 +283,74 @@ With `DEMO_MODE=true`, nothing is sent. Each notification is written to the cont
 
 ---
 
+## 4. Backups
+
+`deploy/backup-family-hub.sh` makes a dated `.tar.gz` of everything Family Hub needs to come back after a disk failure or a mistake:
+
+- the whole data folder `/mnt/user/appdata/family-hub-data`: the database (`family-hub.db`), the encryption key `.secret-key` and anything else in there
+- your `.env` from `/mnt/user/appdata/family-hub-src/.env`
+
+The database is copied with SQLite's online backup **inside the running container** (using the app's own SQLite library), so Family Hub keeps running and nothing needs installing on Unraid. If that fails for any reason, the script stops the container for a few seconds, copies the files and starts it again. Each copy is checked with SQLite's `integrity_check` and the finished archive is checked with `tar` before old ones are deleted.
+
+> ⚠️ **The archive contains your encryption key and all your API keys and tokens** (Sonarr, Radarr, Plex, Home Assistant…), plus the `.env`. Anyone with the archive can read them. Keep backups on the array or on **encrypted** off-site storage (for example an encrypted cloud backup or an encrypted USB disk). Never put them in a public share, a public cloud folder, a Git repo or an email. The script makes the backup folder readable by root only (`700`) and each archive `600`.
+
+### Set it up with the User Scripts plugin
+
+1. In Unraid, go to **Apps**, search for **User Scripts** (by Squid) and install it.
+2. Go to **Settings › User Scripts › Add New Script** and name it `family-hub-backup`.
+3. Hover over the cog next to the new script › **Edit Script**, delete what's there and paste **one** of these:
+   - the full contents of [`deploy/backup-family-hub.sh`](deploy/backup-family-hub.sh) (best if you want to change the settings at the top), **or**
+   - this one-liner, which always runs the latest version from GitHub:
+     ```bash
+     #!/bin/bash
+     curl -fsSL https://raw.githubusercontent.com/axletime/family-hub/main/deploy/backup-family-hub.sh | bash
+     ```
+     Settings can be added in front of `bash`, e.g. `... | KEEP_DAYS=30 NTFY_TOPIC=familyhub-admin bash`.
+4. Click **Save Changes**, then **Run Script** once and check the log ends with `Backup finished`.
+5. In the schedule dropdown next to the script, choose **Custom** and enter `0 3 * * *` (every day at 03:00). Click **Apply**.
+
+### Settings
+
+All settings are at the top of the script (or can be passed as environment variables, as above):
+
+| Setting | Default | Notes |
+|---|---|---|
+| `CONTAINER` | `family-hub` | Container name |
+| `DATA_DIR` | `/mnt/user/appdata/family-hub-data` | Host folder mounted at `/data` |
+| `ENV_FILE` | `/mnt/user/appdata/family-hub-src/.env` | Blank = don't include the `.env` |
+| `DEST` | `/mnt/user/backups/family-hub` | Where archives go (created if missing) |
+| `KEEP_DAYS` | `14` | Archives older than this are deleted (`0` = keep everything) |
+| `ALLOW_STOP` | `yes` | Allow the brief stop/copy/start fallback |
+| `NTFY_URL` / `NTFY_TOPIC` / `NTFY_TOKEN` | `https://ntfy.sh` / – / – | Set `NTFY_TOPIC` to get an ntfy alert when a backup **fails** (blank = off) |
+| `NOTIFY_ON_SUCCESS` | `no` | `yes` = also send a quiet message after each good backup |
+
+### Where the backups are
+
+`/mnt/user/backups/family-hub/family-hub-YYYY-MM-DD_HHMMSS.tar.gz`, one per run. Each archive contains `data/` (the data folder), `env/.env` and a `MANIFEST.txt` describing when and how it was made. The log of each run is under the script's **Show Log** in User Scripts. The script exits with an error (and sends the ntfy alert, if set up) when anything goes wrong.
+
+### Restoring
+
+Restoring replaces the current data with the backup, so anything added since then is lost. The current data folder isn't deleted: it's moved aside to `family-hub-data.pre-restore-<time>`.
+
+In the Unraid terminal:
+
+```bash
+curl -fsSL -o /tmp/restore-family-hub.sh https://raw.githubusercontent.com/axletime/family-hub/main/deploy/restore-family-hub.sh
+ls /mnt/user/backups/family-hub/            # pick an archive
+bash /tmp/restore-family-hub.sh /mnt/user/backups/family-hub/family-hub-2026-11-26_030000.tar.gz
+```
+
+It checks the archive, shows what it's going to do and asks you to type `yes`. Then it stops the container, puts the backed-up data in place, fixes ownership (`99:100`) and starts the container again. Options:
+
+- `--with-env` also restores the `.env` (the current one is kept as `.env.pre-restore-<time>`). A changed `.env` only takes effect when the container is re-created with the `docker rm -f` + `docker run` commands from *Updating via GitHub*.
+- `--yes` skips the confirmation.
+
+Once the hub looks right, delete the `family-hub-data.pre-restore-<time>` folder.
+
+**By hand**, if you'd rather not use the script: `docker stop family-hub`, rename `/mnt/user/appdata/family-hub-data`, then `mkdir /tmp/fh && tar -xzf <archive> -C /tmp/fh && mv /tmp/fh/data /mnt/user/appdata/family-hub-data && chown -R 99:100 /mnt/user/appdata/family-hub-data`, then `docker start family-hub`.
+
+---
+
 ## Running it somewhere else
 
 Nothing is tied to `192.168.1.201`. On any machine with Docker (another Unraid box, a Pi 4/5, a Linux PC or a NAS):
@@ -343,6 +411,7 @@ All settings can be environment variables; see `.env.example` for the full annot
 - Sessions use a random 256-bit token in an `HttpOnly`, `SameSite=Lax` cookie. Only a SHA-256 hash of the token is stored. Signing out deletes the session. Removing a family member signs them out everywhere.
 - Every state-changing API call must be `application/json`. Together with `SameSite=Lax`, this blocks cross-site request forgery.
 - PIN attempts are rate-limited per profile (5 failures → 15-minute lockout).
+- Backup archives (see *Backups*) contain the encryption key and every saved token. Keep them private: on the array or on encrypted off-site storage.
 - Family Hub is designed for your **LAN**. Don't port-forward it to the internet. If you want remote access, use a VPN (WireGuard, Tailscale) or a reverse proxy with HTTPS, and set `COOKIE_SECURE=true`.
 
 ---
@@ -356,7 +425,7 @@ All settings can be environment variables; see `.env.example` for the full annot
 - **The phone layout looks old after updating.** Close the home-screen app fully and reopen it, or refresh the page in the browser.
 - **No notifications arrive.** Press **Send test notification** on My account. An error there (e.g. `ntfy unreachable (ECONNREFUSED)` or `HTTP 401`) means the server address or token is wrong. If the test says *sent* but nothing arrives, check the phone is subscribed to exactly the same topic and server, and that notifications are allowed for the ntfy app. With a self-hosted server, the phone must be on your home network.
 - **"Home Assistant is not configured".** Add the address and token in Admin › Settings › Connections › Home Assistant.
-- **A Connections field says the saved value could not be decrypted.** `APP_SECRET` changed or `/data/.secret-key` was lost. Re-enter the key, or press **Clear** to go back to `.env`.
+- **A Connections field says the saved value could not be decrypted.** `APP_SECRET` changed or `/data/.secret-key` was lost. Re-enter the key, press **Clear** to go back to `.env`, or restore the data folder from a backup (see *Backups*).
 
 ---
 
