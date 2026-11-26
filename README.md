@@ -361,6 +361,46 @@ Once the hub looks right, delete the `family-hub-data.pre-restore-<time>` folder
 
 ---
 
+## 5. Groups and permissions
+
+Every person belongs to a group: **Admin** (always allowed everything), **Home** and **Outside** (you can rename both). Existing admins became Admin and existing family members became Home. In **Family › Groups & permissions**, tick what each group may use: service tiles, download queue, calendar, Home Assistant (view), Home Assistant control and heating, cameras, requesting, Discover, My requests, All requests and approving. Each feature can be set to Yes, **Home network only** or No. The server checks these on every page and API call, and anything not allowed is hidden from the menu and dashboard. Changing someone's group or PIN signs them out everywhere.
+
+Out of the box, Home can use everything except cameras and approving. Outside can only request, use Discover and see My requests.
+
+## 6. Cameras (go2rtc)
+
+Family Hub shows your NVR cameras through [go2rtc](https://github.com/AlexxIT/go2rtc), which converts RTSP into something browsers can play. The browser never sees camera addresses or passwords: all pictures and video go through Family Hub, which checks permissions first.
+
+1. Run go2rtc on Unraid (one line, in the Unraid terminal):
+   ```bash
+   docker run -d --name go2rtc --restart unless-stopped --network host -v /mnt/user/appdata/go2rtc:/config alexxit/go2rtc
+   ```
+   **Do not port-forward go2rtc (port 1984).** Only Family Hub needs to reach it.
+2. In **Settings › Connections**, set **go2rtc URL** to `http://192.168.1.201:1984` and press **Test connection**.
+3. In **Settings › Cameras**, use the **NVR helper**: enter the NVR IP, username, password and number of channels, pick **Sannce / XMeye** and press Add. Or add each camera by hand (main stream plus an optional sub-stream). Family Hub registers the streams with go2rtc itself, so you never need to edit go2rtc's config. Press **Test** on each camera to fetch a picture.
+
+### Finding your Sannce RTSP addresses
+
+Sannce NVRs are XMeye-based. Turn on RTSP in the NVR's network settings (port 554), then try in VLC (Media › Open Network Stream):
+
+- Main stream: `rtsp://NVR-IP:554/user=USER&password=PASS&channel=1&stream=0.sdp?real_stream`
+- Sub-stream: `rtsp://NVR-IP:554/user=USER&password=PASS&channel=1&stream=1.sdp?real_stream`
+
+Change `channel=` to 1–4 for each camera. If live video won't play in the browser, set the NVR's encoding to **H.264** (browsers can't play H.265). Family Hub falls back to MJPEG and then to refreshing pictures if it has to.
+
+## 7. Using it from the internet safely (HTTPS)
+
+Your No-IP address currently forwards plain HTTP (router port 80 → 192.168.1.201:3000), so PINs travel unencrypted. Family Hub now limits sign-in attempts per IP address and per person (an escalating delay, then a 15-minute lockout), records every sign-in in **Settings › Security** with the IP address, and can require 6+ digit PINs. It also shows a red banner to admins using plain HTTP from outside. Even so, you should put HTTPS in front of it:
+
+1. In Unraid Apps, install **Nginx Proxy Manager** (NPM).
+2. On your router, forward **443 → NPM's HTTPS port** and **80 → NPM's HTTP port**, and **remove the old 80 → 3000 forward**. Do not forward NPM's admin port (81).
+3. In NPM, add a Proxy Host: your No-IP hostname → `http://192.168.1.201:3000`, with Websockets support on. On the SSL tab, request a Let's Encrypt certificate and enable **Force SSL**.
+4. In **Settings › Security › Trusted proxies**, enter NPM's IP address (or set `TRUST_PROXY` in `.env`). Family Hub then trusts NPM's `X-Forwarded-For`/`X-Forwarded-Proto` headers, sees the real visitor IP and sets secure cookies automatically.
+
+**Home network only** (Settings › Security, or per feature in the permissions matrix) blocks cameras or Home Assistant control from anywhere outside your LAN. Settings shows whether your current connection counts as Home or Away.
+
+The Docker image now starts with `node fh-server.cjs` (a small wrapper that records the real connection IP). Watchtower picks this up automatically, so you don't need to change your `docker run` command.
+
 ## Running it somewhere else
 
 Nothing is tied to `192.168.1.201`. On any machine with Docker (another Unraid box, a Pi 4/5, a Linux PC or a NAS):
@@ -384,6 +424,8 @@ DEMO_MODE=true DATA_DIR=./data ADMIN_PIN=1234 npm run dev
 ---
 
 ## Configuration reference
+
+New: `GO2RTC_URL` (go2rtc address, also settable in Connections) and `TRUST_PROXY` (comma-separated IPs of a reverse proxy whose forwarded headers to trust).
 
 All settings can be environment variables; see `.env.example` for the full annotated list. **The minimum `.env` is just `ADMIN_PIN`** (plus `TZ`, and optionally `APP_SECRET`). The addresses, keys and tokens marked ★ can be set in **Admin › Settings › Connections** instead. Other options marked ☆ are in **Admin › Settings**. Values saved there are stored in the database and take priority over the environment, which remains the fallback.
 

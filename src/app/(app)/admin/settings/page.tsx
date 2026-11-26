@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { api, useApi } from '@/components/api';
 import { ErrorNote, Icon, Spinner, Toggle } from '@/components/ui';
 import { formatBytes, formatDateTime } from '@/components/format';
+import SecurityPanel from '@/components/admin/SecurityPanel';
+import CamerasAdmin from '@/components/admin/CamerasAdmin';
 
 interface Settings {
   requireApproval: boolean;
@@ -15,7 +17,6 @@ interface Settings {
   lidarrQualityProfileId: number | null;
   lidarrMetadataProfileId: number | null;
   haEntities: string[];
-  familyCanControlHeating: boolean;
   notificationsEnabled: boolean;
   ntfyUrl: string;
   ntfyTopicPrefix: string;
@@ -111,10 +112,12 @@ export default function SettingsPage() {
         <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent-600 text-white"><Icon name="key" /></span>
         <span className="min-w-0 flex-1">
           <span className="block font-semibold">Connections &amp; API keys</span>
-          <span className="block break-words text-sm text-slate-500 dark:text-slate-400">Sonarr, Radarr, Lidarr, Plex, Home Assistant, TMDB, ntfy, webhook secret and the hub’s address — no need to edit .env.</span>
+          <span className="block break-words text-sm text-slate-500 dark:text-slate-400">Sonarr, Radarr, Lidarr, Plex, Home Assistant, go2rtc, TMDB, ntfy, webhook secret and the hub’s address — no need to edit .env.</span>
         </span>
         <span aria-hidden className="text-2xl text-slate-400">›</span>
       </Link>
+
+      <SecurityPanel />
 
       {msg && (msg.ok ? <p className="rounded-xl bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">{msg.text}</p> : <ErrorNote>{msg.text}</ErrorNote>)}
 
@@ -122,7 +125,7 @@ export default function SettingsPage() {
         <div className="flex-1">
           <h2 className="font-semibold">Require admin approval</h2>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            When on, requests from family members wait in <a href="/admin/requests" className="link py-3">All requests</a> until an admin approves them. When off, requests go straight to Sonarr, Radarr or Lidarr. Admins’ own requests are always sent straight away.
+            When on, requests from family members wait in <a href="/admin/requests" className="link py-3">All requests</a> until an admin approves them. When off, requests go straight to Sonarr, Radarr or Lidarr. Requests from people who can approve are always sent straight away.
           </p>
         </div>
         <Toggle label="Require admin approval" checked={s.requireApproval} disabled={saving} onChange={(v) => save({ requireApproval: v })} />
@@ -227,15 +230,11 @@ export default function SettingsPage() {
         </button>
       </section>
 
-      <section className="card flex items-start gap-4 p-4 sm:p-5">
-        <div className="flex-1">
-          <h2 className="font-semibold">Family members can control heating</h2>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            When on, everyone can change the thermostat, boost the heating and switch the hot water from the dashboard. When off, family members see the heating and hot water cards but can’t change them; admins always can.
-          </p>
-        </div>
-        <Toggle label="Family members can control heating" checked={s.familyCanControlHeating} disabled={saving} onChange={(v) => save({ familyCanControlHeating: v })} />
-      </section>
+      <p className="-mt-3 px-1 text-xs text-slate-500 dark:text-slate-400">
+        Who can switch things and change the heating is now set per group on <Link href="/admin/users" className="link">Family › Groups &amp; permissions</Link>.
+      </p>
+
+      <CamerasAdmin />
 
       <section className="card space-y-4 p-4 sm:p-5">
         <div className="flex items-start gap-4">

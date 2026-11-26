@@ -5,7 +5,8 @@ import { api } from './api';
 import { formatDate } from './format';
 import { Empty, Icon, MEDIA_ICON, MEDIA_LABEL, Poster, Spinner, StatusBadge } from './ui';
 
-export default function RequestList({ requests, admin = false, currentUserId, onChange }: { requests: RequestView[]; admin?: boolean; currentUserId: number; onChange: () => void }) {
+/** `admin` = the "All requests" view (shows who asked); approve/decline need `canApprove`, removing others' requests needs `canRemoveAny`. */
+export default function RequestList({ requests, admin = false, canApprove = false, canRemoveAny = false, currentUserId, onChange }: { requests: RequestView[]; admin?: boolean; canApprove?: boolean; canRemoveAny?: boolean; currentUserId: number; onChange: () => void }) {
   const [busy, setBusy] = useState<number | null>(null);
   const [error, setError] = useState<{ id: number; msg: string } | null>(null);
 
@@ -28,7 +29,7 @@ export default function RequestList({ requests, admin = false, currentUserId, on
   return (
     <ul className="space-y-3">
       {requests.map((r) => {
-        const canCancel = admin || (r.requestedById === currentUserId && ['pending', 'declined', 'failed'].includes(r.status));
+        const canCancel = canRemoveAny || (r.requestedById === currentUserId && ['pending', 'declined', 'failed'].includes(r.status));
         return (
           <li key={r.id} className="card flex gap-4 p-3">
             <div className="w-16 shrink-0 sm:w-20">
@@ -50,12 +51,12 @@ export default function RequestList({ requests, admin = false, currentUserId, on
               {r.note && <p className="text-sm text-slate-600 dark:text-slate-300">{r.status === 'failed' ? '⚠ ' : ''}{r.note}</p>}
               {error?.id === r.id && <p className="text-sm text-red-600 dark:text-red-400">{error.msg}</p>}
               <div className="mt-auto flex flex-wrap gap-2 pt-1">
-                {admin && ['pending', 'failed', 'declined'].includes(r.status) && (
+                {canApprove && ['pending', 'failed', 'declined'].includes(r.status) && (
                   <button disabled={busy === r.id} onClick={() => act(r, () => api(`/api/requests/${r.id}`, { method: 'PATCH', body: { action: 'approve' } }))} className="btn-success px-3 py-1.5">
                     {busy === r.id ? <Spinner className="h-4 w-4" /> : <Icon name="check" className="h-4 w-4" />} {r.status === 'failed' ? 'Retry' : 'Approve'}
                   </button>
                 )}
-                {admin && ['pending', 'failed'].includes(r.status) && (
+                {canApprove && ['pending', 'failed'].includes(r.status) && (
                   <button
                     disabled={busy === r.id}
                     onClick={() => {
@@ -72,13 +73,13 @@ export default function RequestList({ requests, admin = false, currentUserId, on
                   <button
                     disabled={busy === r.id}
                     onClick={() => {
-                      if (window.confirm(admin ? `Remove the request for “${r.title}”? (This does not delete anything from Sonarr/Radarr/Lidarr.)` : `Cancel your request for “${r.title}”?`)) {
+                      if (window.confirm(canRemoveAny ? `Remove the request for “${r.title}”? (This does not delete anything from Sonarr/Radarr/Lidarr.)` : `Cancel your request for “${r.title}”?`)) {
                         act(r, () => api(`/api/requests/${r.id}`, { method: 'DELETE' }));
                       }
                     }}
                     className="btn-ghost px-3 py-1.5 text-red-600 dark:text-red-400"
                   >
-                    <Icon name="trash" className="h-4 w-4" /> {admin ? 'Remove' : 'Cancel'}
+                    <Icon name="trash" className="h-4 w-4" /> {canRemoveAny ? 'Remove' : 'Cancel'}
                   </button>
                 )}
               </div>

@@ -5,20 +5,32 @@ import { useCallback, useEffect, useState } from 'react';
 import type { SessionUser } from '@/lib/auth';
 import { api } from './api';
 import { Avatar, Icon } from './ui';
+import { canUse, type FeatureId } from '@/lib/features';
 
-const MEMBER_LINKS = [
+type NavLink = { href: string; label: string; short: string; icon: string; feature?: FeatureId; adminOnly?: boolean };
+
+const MAIN_LINKS: NavLink[] = [
   { href: '/', label: 'Dashboard', short: 'Home', icon: 'home' },
-  { href: '/request', label: 'Request', short: 'Request', icon: 'search' },
-  { href: '/discover', label: 'Discover', short: 'Discover', icon: 'sparkle' },
-  { href: '/my-requests', label: 'My requests', short: 'My requests', icon: 'list' },
+  { href: '/cameras', label: 'Cameras', short: 'Cameras', icon: 'camera', feature: 'cameras' },
+  { href: '/request', label: 'Request', short: 'Request', icon: 'search', feature: 'request' },
+  { href: '/discover', label: 'Discover', short: 'Discover', icon: 'sparkle', feature: 'discover' },
+  { href: '/my-requests', label: 'My requests', short: 'My requests', icon: 'list', feature: 'myRequests' },
 ];
-const ADMIN_LINKS = [
-  { href: '/admin/requests', label: 'All requests', short: 'All requests', icon: 'inbox' },
-  { href: '/admin/users', label: 'Family', short: 'Family', icon: 'users' },
-  { href: '/admin/settings', label: 'Settings', short: 'Settings', icon: 'cog' },
+const ADMIN_LINKS: NavLink[] = [
+  { href: '/admin/requests', label: 'All requests', short: 'All requests', icon: 'inbox', feature: 'allRequests' },
+  { href: '/admin/users', label: 'Family', short: 'Family', icon: 'users', adminOnly: true },
+  { href: '/admin/settings', label: 'Settings', short: 'Settings', icon: 'cog', adminOnly: true },
 ];
 /** Extra admin shortcuts shown only in the phone "More" sheet. */
-const MORE_ADMIN_LINKS = [{ href: '/admin/settings/connections', label: 'Connections & API keys', icon: 'key' }];
+const MORE_ADMIN_LINKS: NavLink[] = [{ href: '/admin/settings/connections', label: 'Connections & API keys', short: 'Connections', icon: 'key', adminOnly: true }];
+
+function allowed(user: SessionUser, l: NavLink) {
+  if (l.adminOnly) return user.role === 'admin';
+  return !l.feature || canUse(user, l.feature);
+}
+
+/** Phone tab bar holds at most this many links; the rest go in the More sheet. */
+const TAB_SLOTS = 4;
 
 function useTheme() {
   const [dark, setDark] = useState(true);
@@ -51,7 +63,7 @@ async function signOut() {
 }
 
 /** Bottom sheet opened from the "More" tab on phones. */
-function MoreSheet({ user, open, onClose, isActive }: { user: SessionUser; open: boolean; onClose: () => void; isActive: (h: string) => boolean }) {
+function MoreSheet({ user, open, onClose, isActive, overflow, adminLinks }: { user: SessionUser; open: boolean; onClose: () => void; isActive: (h: string) => boolean; overflow: NavLink[]; adminLinks: NavLink[] }) {
   const { dark, flip } = useTheme();
   useEffect(() => {
     if (!open) return;
@@ -74,13 +86,19 @@ function MoreSheet({ user, open, onClose, isActive }: { user: SessionUser; open:
           <Avatar name={user.name} colour={user.colour} size="h-11 w-11 text-lg" />
           <div>
             <div className="font-semibold">{user.name}</div>
-            <div className="text-sm text-slate-500 dark:text-slate-400">{user.role === 'admin' ? 'Administrator' : 'Family member'}</div>
+            <div className="text-sm text-slate-500 dark:text-slate-400">{user.groupName}</div>
           </div>
         </div>
-        {user.role === 'admin' && (
+        {overflow.map((l) => (
+          <Link key={l.href} href={l.href} onClick={onClose} className={`${row} ${isActive(l.href) ? 'bg-accent-600 text-white' : 'hover:bg-slate-100 dark:hover:bg-white/5'}`}>
+            <Icon name={l.icon} /> {l.label}
+          </Link>
+        ))}
+        {overflow.length > 0 && <div className="my-2 border-t border-slate-200 dark:border-white/10" />}
+        {adminLinks.length > 0 && (
           <>
-            <div className="px-4 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Admin</div>
-            {[...ADMIN_LINKS, ...MORE_ADMIN_LINKS].map((l) => (
+            <div className="px-4 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{user.role === 'admin' ? 'Admin' : 'Requests'}</div>
+            {adminLinks.map((l) => (
               <Link key={l.href} href={l.href} onClick={onClose} className={`${row} ${(l.href === '/admin/settings' ? isActive(l.href) && !isActive('/admin/settings/connections') : isActive(l.href)) ? 'bg-accent-600 text-white' : 'hover:bg-slate-100 dark:hover:bg-white/5'}`}>
                 <Icon name={l.icon} /> {l.label}
               </Link>
@@ -105,9 +123,14 @@ function MoreSheet({ user, open, onClose, isActive }: { user: SessionUser; open:
 export default function Shell({ user, demo, children }: { user: SessionUser; demo: boolean; children: React.ReactNode }) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
-  const links = user.role === 'admin' ? [...MEMBER_LINKS, ...ADMIN_LINKS] : MEMBER_LINKS;
+  const main = MAIN_LINKS.filter((l) => allowed(user, l));
+  const admin = ADMIN_LINKS.filter((l) => allowed(user, l));
+  const links = [...main, ...admin];
+  const tabs = main.slice(0, TAB_SLOTS);
+  const overflow = main.slice(TAB_SLOTS);
+  const moreAdmin = [...admin, ...MORE_ADMIN_LINKS.filter((l) => allowed(user, l))];
   const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
-  const moreActive = [...ADMIN_LINKS.map((l) => l.href), '/account'].some(isActive);
+  const moreActive = [...overflow.map((l) => l.href), ...moreAdmin.map((l) => l.href), '/account'].some(isActive);
 
   const closeMore = useCallback(() => setMoreOpen(false), []);
   useEffect(() => setMoreOpen(false), [pathname]);
@@ -152,7 +175,7 @@ export default function Shell({ user, demo, children }: { user: SessionUser; dem
       {/* Phone / tablet bottom tab bar */}
       <nav className="pb-safe fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur lg:hidden dark:border-white/10 dark:bg-[#0b1220]/95" aria-label="Main">
         <div className="mx-auto flex max-w-xl">
-          {MEMBER_LINKS.map((l) => (
+          {tabs.map((l) => (
             <Link
               key={l.href}
               href={l.href}
@@ -173,7 +196,7 @@ export default function Shell({ user, demo, children }: { user: SessionUser; dem
           </button>
         </div>
       </nav>
-      <MoreSheet user={user} open={moreOpen} onClose={closeMore} isActive={isActive} />
+      <MoreSheet user={user} open={moreOpen} onClose={closeMore} isActive={isActive} overflow={overflow} adminLinks={moreAdmin} />
     </div>
   );
 }

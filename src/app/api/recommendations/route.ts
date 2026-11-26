@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server';
-import { handler, HttpError, requireUser } from '@/lib/auth';
+import { handler, HttpError, requireFeature } from '@/lib/auth';
 import { getRecommendations } from '@/lib/recommend';
 import type { RecMediaType } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
 export const GET = handler(async (req) => {
-  const user = await requireUser();
+  const user = await requireFeature('discover');
   const url = new URL(req.url);
   const type = url.searchParams.get('type') as RecMediaType;
   if (type !== 'tv' && type !== 'movie') throw new HttpError(400, 'Unknown type.');

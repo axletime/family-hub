@@ -5,6 +5,7 @@ import { useApi } from '@/components/api';
 import RequestList from '@/components/RequestList';
 import { ErrorNote, Spinner } from '@/components/ui';
 import { useMe } from '@/components/useMe';
+import { canUse } from '@/lib/features';
 
 const FILTERS: { value: RequestStatus | ''; label: string }[] = [
   { value: '', label: 'All' },
@@ -34,7 +35,7 @@ export default function AllRequestsPage() {
         ))}
       </div>
       {error && <ErrorNote>{error}</ErrorNote>}
-      {!data || !me ? <Spinner /> : <RequestList admin requests={data.requests} currentUserId={me.id} onChange={reload} />}
+      {!data || !me ? <Spinner /> : <RequestList admin canApprove={canUse(me, 'approve')} canRemoveAny={me.role === 'admin'} requests={data.requests} currentUserId={me.id} onChange={reload} />}
     </div>
   );
 }

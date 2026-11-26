@@ -134,6 +134,7 @@ export function getConfig() {
       topicPrefix: str('NTFY_TOPIC_PREFIX', 'familyhub'),
       pollMinutes: int('NOTIFY_POLL_MINUTES') ?? 5,
     },
+    go2rtc: { url: stripSlash(str('GO2RTC_URL', 'http://192.168.1.201:1984')) },
     webhookSecret: str('WEBHOOK_SECRET'),
     recCacheHours: int('REC_CACHE_HOURS') ?? 6,
     requestTimeoutMs: int('SERVICE_TIMEOUT_MS') ?? 8000,

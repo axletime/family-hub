@@ -2,15 +2,16 @@ import 'server-only';
 import crypto from 'node:crypto';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { getDb, type UserRow } from './db';
+import { getDb, getGroupAccess, type UserRow } from './db';
 import { getConfig } from './config';
 import { verifyPin } from './pin';
+import { canUse, denyReason, groupLabel, type AccessInfo, type FeatureId, type GroupAccess, type GroupId } from './features';
+import { getClient, type ClientInfo } from './network';
+import { checkLock, failureDelayMs, recordAuthEvent } from './loginGuard';
 
 export const SESSION_COOKIE = 'fh_session';
-const MAX_FAILURES = 5;
-const LOCKOUT_MS = 15 * 60 * 1000;
 
-export interface SessionUser {
+export interface SessionUser extends AccessInfo {
   id: number;
   name: string;
   role: 'admin' | 'member';
@@ -21,67 +22,77 @@ function sha256(v: string) {
   return crypto.createHash('sha256').update(v).digest('hex');
 }
 
-function toSessionUser(u: UserRow): SessionUser {
-  return { id: u.id, name: u.name, role: u.role, colour: u.colour };
-}
-
-/** Returns minutes remaining on a lockout, or 0 if the user may attempt to sign in. */
-export function lockoutMinutes(userId: number): number {
-  const db = getDb();
-  const since = Date.now() - LOCKOUT_MS;
-  db.prepare('DELETE FROM login_attempts WHERE attempted_at < ?').run(since);
-  const rows = db
-    .prepare('SELECT attempted_at FROM login_attempts WHERE user_id = ? AND attempted_at >= ? ORDER BY attempted_at ASC')
-    .all(userId, since) as { attempted_at: number }[];
-  if (rows.length < MAX_FAILURES) return 0;
-  return Math.max(1, Math.ceil((rows[0].attempted_at + LOCKOUT_MS - Date.now()) / 60000));
+function toSessionUser(u: UserRow, client: ClientInfo, ga: GroupAccess = getGroupAccess()): SessionUser {
+  // Admin role and Admin group always go together; Admin always has everything (bar network limits).
+  const group: GroupId = u.role === 'admin' ? 'admin' : u.user_group === 'outside' ? 'outside' : 'home';
+  return { id: u.id, name: u.name, role: u.role, colour: u.colour, group, groupName: groupLabel(group, ga.names), network: client.network, access: ga[group] };
 }
 
 export type LoginResult =
   | { ok: true; token: string; user: SessionUser }
-  | { ok: false; error: string; status: number };
+  | { ok: false; error: string; status: number; delayMs?: number };
 
-export function attemptLogin(userId: number, pin: string): LoginResult {
+function lockMessage(until: number, scope: 'ip' | 'user') {
+  const mins = Math.max(1, Math.ceil((until - Date.now()) / 60000));
+  const when = mins >= 90 ? `${Math.ceil(mins / 60)} hours` : `${mins} minute${mins === 1 ? '' : 's'}`;
+  return scope === 'ip' ? `Too many incorrect PINs from this device. Try again in ${when}.` : `Too many incorrect PINs for this profile. Try again in ${when}.`;
+}
+
+export function attemptLogin(userId: number, pin: string, client: ClientInfo): LoginResult {
   const db = getDb();
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as UserRow | undefined;
-  if (!user) return { ok: false, error: 'Unknown profile.', status: 400 };
-  const locked = lockoutMinutes(user.id);
-  if (locked > 0) {
-    return { ok: false, error: `Too many incorrect PINs. Try again in ${locked} minute${locked === 1 ? '' : 's'}.`, status: 429 };
+  const lock = checkLock(client, user ? user.id : null);
+  if (lock) {
+    recordAuthEvent(client, user ? { id: user.id, name: user.name } : null, false, lock.scope === 'ip' ? 'locked_ip' : 'locked_user');
+    return { ok: false, error: lockMessage(lock.until, lock.scope), status: 429 };
+  }
+  if (!user) {
+    recordAuthEvent(client, null, false, 'unknown_profile');
+    return { ok: false, error: 'Unknown profile.', status: 400, delayMs: failureDelayMs(client) };
   }
   if (!verifyPin(pin, user.pin_hash)) {
-    db.prepare('INSERT INTO login_attempts (user_id, attempted_at) VALUES (?, ?)').run(user.id, Date.now());
-    return { ok: false, error: 'Incorrect PIN.', status: 401 };
+    recordAuthEvent(client, { id: user.id, name: user.name }, false, 'bad_pin');
+    const after = checkLock(client, user.id);
+    if (after) return { ok: false, error: lockMessage(after.until, after.scope), status: 429, delayMs: failureDelayMs(client) };
+    return { ok: false, error: 'Incorrect PIN.', status: 401, delayMs: failureDelayMs(client) };
   }
-  db.prepare('DELETE FROM login_attempts WHERE user_id = ?').run(user.id);
+  recordAuthEvent(client, { id: user.id, name: user.name }, true, 'ok');
+  if (user.pin_len !== pin.length) db.prepare('UPDATE users SET pin_len = ? WHERE id = ?').run(pin.length, user.id);
   const token = crypto.randomBytes(32).toString('base64url');
   const expires = Date.now() + getConfig().sessionDays * 86400000;
   db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(Date.now());
   db.prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)').run(sha256(token), user.id, expires);
-  return { ok: true, token, user: toSessionUser(user) };
+  return { ok: true, token, user: toSessionUser(user, client) };
 }
 
-export function setSessionCookie(res: NextResponse, token: string) {
+/** Secure cookies when COOKIE_SECURE is set, or automatically when this request arrived over HTTPS. */
+export function setSessionCookie(res: NextResponse, token: string, client?: ClientInfo) {
   const cfg = getConfig();
   res.cookies.set(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: 'lax',
-    secure: cfg.cookieSecure,
+    secure: cfg.cookieSecure || Boolean(client?.https),
     path: '/',
     maxAge: cfg.sessionDays * 86400,
   });
 }
 
-export function clearSessionCookie(res: NextResponse) {
-  res.cookies.set(SESSION_COOKIE, '', { httpOnly: true, sameSite: 'lax', secure: getConfig().cookieSecure, path: '/', maxAge: 0 });
+export function clearSessionCookie(res: NextResponse, client?: ClientInfo) {
+  res.cookies.set(SESSION_COOKIE, '', { httpOnly: true, sameSite: 'lax', secure: getConfig().cookieSecure || Boolean(client?.https), path: '/', maxAge: 0 });
 }
 
 export function destroySession(token: string | undefined) {
   if (token) getDb().prepare('DELETE FROM sessions WHERE token_hash = ?').run(sha256(token));
 }
 
-export function destroyUserSessions(userId: number) {
-  getDb().prepare('DELETE FROM sessions WHERE user_id = ?').run(userId);
+/** Sign a user out everywhere (optionally keeping the current session). */
+export function destroyUserSessions(userId: number, exceptToken?: string) {
+  if (exceptToken) getDb().prepare('DELETE FROM sessions WHERE user_id = ? AND token_hash != ?').run(userId, sha256(exceptToken));
+  else getDb().prepare('DELETE FROM sessions WHERE user_id = ?').run(userId);
+}
+
+export async function currentSessionToken(): Promise<string | undefined> {
+  return (await cookies()).get(SESSION_COOKIE)?.value;
 }
 
 /** Resolve the signed-in user from the session cookie (server components and route handlers). */
@@ -94,7 +105,7 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
        WHERE s.token_hash = ? AND s.expires_at > ?`,
     )
     .get(sha256(token), Date.now()) as UserRow | undefined;
-  return row ? toSessionUser(row) : null;
+  return row ? toSessionUser(row, await getClient()) : null;
 }
 
 export class HttpError extends Error {
@@ -113,6 +124,21 @@ export async function requireAdmin(): Promise<SessionUser> {
   const u = await requireUser();
   if (u.role !== 'admin') throw new HttpError(403, 'Admins only.');
   return u;
+}
+
+/** Signed in, in a group allowed to use this feature, and on an allowed network. */
+export async function requireFeature(f: FeatureId): Promise<SessionUser> {
+  const u = await requireUser();
+  const reason = denyReason(u, f);
+  if (reason) throw new HttpError(403, reason);
+  return u;
+}
+
+/** Signed in and allowed at least one of these features. */
+export async function requireAnyFeature(fs: FeatureId[]): Promise<SessionUser> {
+  const u = await requireUser();
+  if (fs.some((f) => canUse(u, f))) return u;
+  throw new HttpError(403, denyReason(u, fs[0]) ?? 'Not allowed.');
 }
 
 /**

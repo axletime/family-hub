@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-import { handler, HttpError, readJson, requireUser } from '@/lib/auth';
-import { getSettings } from '@/lib/db';
+import { handler, HttpError, readJson, requireFeature } from '@/lib/auth';
 import { controlHeating, getHaEntities } from '@/lib/services';
 import type { HeatingAction } from '@/lib/types';
 
@@ -10,9 +9,8 @@ const ENTITY_RE = /^(climate|water_heater)\.[a-z0-9_]+$/;
 
 /** Heating / hot water controls. Validated and allowlisted in controlHeating(). */
 export const POST = handler(async (req) => {
-  const user = await requireUser();
-  const settings = getSettings();
-  if (user.role !== 'admin' && !settings.familyCanControlHeating) throw new HttpError(403, 'An admin has made the heating read-only for family members.');
+  await requireFeature('haView');
+  await requireFeature('haControl');
   const b = await readJson<Record<string, unknown>>(req);
   const entityId = b.entityId;
   if (typeof entityId !== 'string' || !ENTITY_RE.test(entityId)) throw new HttpError(400, 'Invalid entity.');

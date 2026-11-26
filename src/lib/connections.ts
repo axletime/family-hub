@@ -48,6 +48,7 @@ function effective(def: ConnectionDef, kind: 'url' | 'secret'): string {
     homeassistant: { url: cfg.ha.url, secret: cfg.ha.token },
     tmdb: { secret: cfg.tmdb.apiKey },
     ntfy: { url: cfg.ntfy.url, secret: cfg.ntfy.token },
+    go2rtc: { url: cfg.go2rtc.url },
     webhook: { secret: cfg.webhookSecret },
     public: { url: cfg.publicUrl },
   };
@@ -265,6 +266,18 @@ export async function testConnection(id: string, input: { url?: unknown; secret?
           /* ntfy.sh and older servers do not expose this */
         }
         return { ok: true, version, message: `Test message published to ${url.replace(/^https?:\/\//, '')}${version ? ` (ntfy ${version})` : ''}.` };
+      }
+      case 'go2rtc': {
+        const streams = await fetchJson<Record<string, unknown>>('go2rtc', `${url}/api/streams`, { timeoutMs });
+        if (!streams || typeof streams !== 'object') return { ok: false, message: `Something answered at ${url}, but it does not look like go2rtc.` };
+        let version: string | undefined;
+        try {
+          version = (await fetchJson<{ version?: string }>('go2rtc', `${url}/api`, { timeoutMs }))?.version;
+        } catch {
+          /* older versions */
+        }
+        const n = Object.keys(streams).length;
+        return { ok: true, version, message: `Connected to go2rtc${version ? ` ${version}` : ''}; ${n} stream${n === 1 ? '' : 's'} registered.` };
       }
       case 'public': {
         const h = await fetchJson<{ ok?: boolean }>('Family Hub', `${url}/api/health`, { timeoutMs });

@@ -60,7 +60,7 @@ export const PUT = handler(async (req) => {
     if (bad) throw new HttpError(400, `"${bad}" is not a valid entity ID (e.g. light.living_room).`);
     patch.haEntities = [...new Set(ids)].slice(0, 60);
   }
-  if (b.familyCanControlHeating !== undefined) patch.familyCanControlHeating = Boolean(b.familyCanControlHeating);
+  // Heating control is now a per-group permission (Admin › Family › Permissions).
   if (b.notificationsEnabled !== undefined) patch.notificationsEnabled = Boolean(b.notificationsEnabled);
   // The ntfy server, its token and the public URL are managed on Admin › Settings › Connections.
   if (b.ntfyTopicPrefix !== undefined) {

@@ -7,6 +7,9 @@ import { relativeDay, timeAgo } from '@/components/format';
 import { RecRow } from '@/components/Recommendations';
 import { DownloadQueue } from '@/components/DownloadQueue';
 import { ClimateCard, WaterCard, type HeatingRequest } from '@/components/HeatingCards';
+import { CamerasCard } from '@/components/Cameras';
+import { useMe } from '@/components/useMe';
+import { canUse } from '@/lib/features';
 
 const SERVICE_ICON: Record<string, string> = { sonarr: 'tv', radarr: 'film', lidarr: 'music', plex: 'sparkle', homeassistant: 'home' };
 const SERVICE_COLOUR: Record<string, string> = { sonarr: '#35C5F4', radarr: '#FFC230', lidarr: '#00A65B', plex: '#E5A00D', homeassistant: '#18BCF2' };
@@ -114,7 +117,7 @@ function HaPanel() {
             <div key={e.entityId} className={`flex items-center gap-3 rounded-xl border p-3 ${e.state === 'on' ? 'border-amber-400/40 bg-amber-400/10' : 'border-slate-200 dark:border-white/10'}`}>
               <Icon name={iconFor(e)} className={`h-5 w-5 ${e.state === 'on' ? 'text-amber-400' : 'text-slate-400'}`} />
               <span className="min-w-0 flex-1 truncate text-sm font-medium">{e.name}</span>
-              <Toggle label={`Toggle ${e.name}`} checked={e.state === 'on'} disabled={!e.available || busy === e.entityId} onChange={() => toggle(e)} />
+              <Toggle label={`Toggle ${e.name}`} checked={e.state === 'on'} disabled={!canControlHeating || !e.available || busy === e.entityId} onChange={() => toggle(e)} />
             </div>
           ))}
         </div>
@@ -173,65 +176,99 @@ function Calendar({ title, icon, items, empty }: { title: string; icon: string; 
 }
 
 export default function Dashboard() {
-  const status = useApi<{ services: ServiceStatus[] }>('/api/dashboard/status', 30000);
-  const media = useApi<MediaOverview>('/api/dashboard/media', 20000);
+  const me = useMe();
+  const can = (f: Parameters<typeof canUse>[1]) => !!me && canUse(me, f);
+  const tiles = can('tiles');
+  const calendar = can('calendar');
+  const queue = can('queue');
+  const status = useApi<{ services: ServiceStatus[] }>(tiles ? '/api/dashboard/status' : null, 30000);
+  const media = useApi<MediaOverview>(calendar || queue ? '/api/dashboard/media' : null, 20000);
   const m = media.data;
+
+  if (!me) return <Spinner />;
+  const left = can('haView') || can('cameras') || queue || tiles;
+  const right = calendar || can('discover');
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-bold sm:text-3xl">{greeting()}</h1>
+          <h1 className="text-2xl font-bold sm:text-3xl">{greeting()}{me.name ? `, ${me.name}` : ''}</h1>
           <p className="text-slate-500 dark:text-slate-400">{new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
         </div>
-        <a href="/request" className="btn-primary w-full sm:w-auto"><Icon name="search" className="h-4 w-4" /> Request something</a>
+        {can('request') && <a href="/request" className="btn-primary w-full sm:w-auto"><Icon name="search" className="h-4 w-4" /> Request something</a>}
       </div>
 
-      <StatusTiles services={status.data?.services} />
+      {tiles && <StatusTiles services={status.data?.services} />}
       {m && m.errors.length > 0 && <ErrorNote>Some services could not be reached: {m.errors.join(' · ')}</ErrorNote>}
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3 [&>*]:min-w-0">
-        <div className="min-w-0 space-y-6 xl:col-span-2">
-          <section className="card p-4">
-            <h2 className="card-title mb-3"><span className="flex items-center gap-2"><Icon name="sparkle" className="h-4 w-4" /> Recently added</span></h2>
-            {!m ? <Spinner /> : !m.recent.length ? <Empty>Nothing new yet.</Empty> : (
-              <div className="scrollbar-thin -mx-1 flex gap-3 overflow-x-auto px-1 pb-2">
-                {m.recent.map((r) => (
-                  <div key={r.id} className="w-28 shrink-0 sm:w-32">
-                    <Poster src={r.poster} title={r.title} square={r.service === 'lidarr'} />
-                    <div className="mt-1.5 truncate text-sm font-medium" title={r.title}>{r.title}</div>
-                    <div className="truncate text-xs text-slate-500 dark:text-slate-400">{r.subtitle}</div>
-                    <div className="text-xs text-slate-400">{timeAgo(r.date)}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 [&>*]:min-w-0">
-            <Calendar title="Upcoming TV" icon="tv" items={m?.upcomingTv} empty="No episodes in the next fortnight." />
-            <Calendar title="Upcoming films" icon="film" items={m?.upcomingMovies} empty="No film releases in the next two months." />
+      {!left && !right && (
+        <section className="card p-6 text-center">
+          <p className="text-slate-600 dark:text-slate-300">Welcome to Family Hub.</p>
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            {can('request') && <a href="/request" className="btn-primary"><Icon name="search" className="h-4 w-4" /> Request a film, show or album</a>}
+            {can('myRequests') && <a href="/my-requests" className="btn-ghost"><Icon name="list" className="h-4 w-4" /> My requests</a>}
           </div>
+        </section>
+      )}
 
-          <RecRow type="tv" title="TV shows you may enjoy" />
-          <RecRow type="movie" title="Films you may enjoy" />
-        </div>
+      <div className={`grid grid-cols-1 gap-6 [&>*]:min-w-0 ${left && right ? 'xl:grid-cols-3' : ''}`}>
+        {right && (
+          <div className={`min-w-0 space-y-6 ${left ? 'xl:col-span-2' : ''}`}>
+            {calendar && (
+              <>
+                <section className="card p-4">
+                  <h2 className="card-title mb-3"><span className="flex items-center gap-2"><Icon name="sparkle" className="h-4 w-4" /> Recently added</span></h2>
+                  {!m ? <Spinner /> : !m.recent.length ? <Empty>Nothing new yet.</Empty> : (
+                    <div className="scrollbar-thin -mx-1 flex gap-3 overflow-x-auto px-1 pb-2">
+                      {m.recent.map((r) => (
+                        <div key={r.id} className="w-28 shrink-0 sm:w-32">
+                          <Poster src={r.poster} title={r.title} square={r.service === 'lidarr'} />
+                          <div className="mt-1.5 truncate text-sm font-medium" title={r.title}>{r.title}</div>
+                          <div className="truncate text-xs text-slate-500 dark:text-slate-400">{r.subtitle}</div>
+                          <div className="text-xs text-slate-400">{timeAgo(r.date)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
 
-        <div className="min-w-0 space-y-6 xl:order-first">
-          <HaPanel />
-          <DownloadQueue queue={m?.queue} />
-          <section className="card p-4">
-            <h2 className="card-title mb-3"><span className="flex items-center gap-2"><Icon name="link" className="h-4 w-4" /> Quick links</span></h2>
-            <div className="grid grid-cols-2 gap-2">
-              {(status.data?.services ?? []).map((s) => (
-                <a key={s.id} href={s.link} target="_blank" rel="noreferrer" className="flex min-h-[44px] items-center gap-2 rounded-xl border border-slate-200 p-3 text-sm font-medium hover:border-accent-400 dark:border-white/10">
-                  <Icon name={SERVICE_ICON[s.id]} className="h-4 w-4" />
-                  {s.name}
-                </a>
-              ))}
-            </div>
-          </section>
-        </div>
+                <div className="grid grid-cols-1 gap-6 md:grid-cols-2 [&>*]:min-w-0">
+                  <Calendar title="Upcoming TV" icon="tv" items={m?.upcomingTv} empty="No episodes in the next fortnight." />
+                  <Calendar title="Upcoming films" icon="film" items={m?.upcomingMovies} empty="No film releases in the next two months." />
+                </div>
+              </>
+            )}
+
+            {can('discover') && (
+              <>
+                <RecRow type="tv" title="TV shows you may enjoy" />
+                <RecRow type="movie" title="Films you may enjoy" />
+              </>
+            )}
+          </div>
+        )}
+
+        {left && (
+          <div className="min-w-0 space-y-6 xl:order-first">
+            {can('cameras') && <CamerasCard />}
+            {can('haView') && <HaPanel />}
+            {queue && <DownloadQueue queue={m?.queue} />}
+            {tiles && (
+              <section className="card p-4">
+                <h2 className="card-title mb-3"><span className="flex items-center gap-2"><Icon name="link" className="h-4 w-4" /> Quick links</span></h2>
+                <div className="grid grid-cols-2 gap-2">
+                  {(status.data?.services ?? []).map((s) => (
+                    <a key={s.id} href={s.link} target="_blank" rel="noreferrer" className="flex min-h-[44px] items-center gap-2 rounded-xl border border-slate-200 p-3 text-sm font-medium hover:border-accent-400 dark:border-white/10">
+                      <Icon name={SERVICE_ICON[s.id]} className="h-4 w-4" />
+                      {s.name}
+                    </a>
+                  ))}
+                </div>
+              </section>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

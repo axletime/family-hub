@@ -1,11 +1,9 @@
-import { redirect } from 'next/navigation';
-import { getCurrentUser } from '@/lib/auth';
+import { guardPage } from '@/lib/pageGuard';
 
 export const dynamic = 'force-dynamic';
 
+/** Each admin section has its own guard (All requests can be opened up to other groups). */
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
-  const user = await getCurrentUser();
-  if (!user) redirect('/login');
-  if (user.role !== 'admin') redirect('/');
+  await guardPage();
   return <>{children}</>;
 }

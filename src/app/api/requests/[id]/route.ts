@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { handler, HttpError, readJson, requireAdmin, requireUser } from '@/lib/auth';
+import { handler, HttpError, readJson, requireFeature, requireUser } from '@/lib/auth';
 import { approveRequest, declineRequest, deleteRequest } from '@/lib/requests';
 
 export const dynamic = 'force-dynamic';
@@ -12,9 +12,10 @@ async function idFrom(ctx: Ctx) {
   return id;
 }
 
-/** Admin: approve or decline. */
+/** Approve or decline (groups with "Approve requests" and "All requests"). */
 export const PATCH = handler<Ctx>(async (req, ctx) => {
-  const admin = await requireAdmin();
+  await requireFeature('allRequests');
+  const admin = await requireFeature('approve');
   const id = await idFrom(ctx);
   const { action, note } = await readJson<{ action?: string; note?: string }>(req);
   if (action === 'approve') return NextResponse.json({ request: await approveRequest(admin, id) });
@@ -25,6 +26,7 @@ export const PATCH = handler<Ctx>(async (req, ctx) => {
 /** Cancel your own pending request, or (admin) remove any request. */
 export const DELETE = handler<Ctx>(async (_req, ctx) => {
   const user = await requireUser();
+  if (user.role !== 'admin') await requireFeature('myRequests');
   deleteRequest(user, await idFrom(ctx));
   return NextResponse.json({ ok: true });
 });

@@ -1,6 +1,6 @@
 /** The services and settings that can be managed on Admin › Settings › Connections. */
 
-export type ConnectionId = 'sonarr' | 'radarr' | 'lidarr' | 'plex' | 'homeassistant' | 'tmdb' | 'ntfy' | 'webhook' | 'public';
+export type ConnectionId = 'sonarr' | 'radarr' | 'lidarr' | 'plex' | 'homeassistant' | 'tmdb' | 'ntfy' | 'go2rtc' | 'webhook' | 'public';
 
 export interface ConnectionDef {
   id: ConnectionId;
@@ -24,6 +24,7 @@ export const CONNECTIONS: ConnectionDef[] = [
   { id: 'homeassistant', name: 'Home Assistant', urlVar: 'HA_URL', defaultUrl: 'http://homeassistant.local:8123', secretVar: 'HA_TOKEN', secretLabel: 'Long-lived access token', help: 'Create one in Home Assistant › your profile › Security › Long-lived access tokens.', testable: true },
   { id: 'tmdb', name: 'TMDB', secretVar: 'TMDB_API_KEY', secretLabel: 'API key (v3) or read access token', help: 'Free key from themoviedb.org › Settings › API. Enables personalised recommendations.', testable: true },
   { id: 'ntfy', name: 'ntfy (push notifications)', urlVar: 'NTFY_URL', urlLabel: 'Server', defaultUrl: 'https://ntfy.sh', secretVar: 'NTFY_TOKEN', secretLabel: 'Access token (optional)', help: 'Only needed for a protected self-hosted server. Test sends a message to a throwaway topic.', testable: true },
+  { id: 'go2rtc', name: 'go2rtc (cameras)', urlVar: 'GO2RTC_URL', urlLabel: 'go2rtc address', defaultUrl: 'http://192.168.1.201:1984', help: 'The go2rtc container that turns the NVR\'s RTSP streams into browser video. Keep it on your home network only — never port-forward it.', testable: true },
   { id: 'webhook', name: 'Webhook shared secret', secretVar: 'WEBHOOK_SECRET', secretLabel: 'Shared secret', help: 'Optional. Add ?secret=… to the Sonarr/Radarr/Lidarr webhook address (see the README).', testable: false },
   { id: 'public', name: 'Public URL', urlVar: 'PUBLIC_URL', urlLabel: 'Family Hub address', defaultUrl: 'http://192.168.1.201:3000', help: 'Used for links in notifications. The address family members use to open the hub.', testable: true },
 ];

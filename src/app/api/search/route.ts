@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server';
-import { handler, HttpError, requireUser } from '@/lib/auth';
+import { handler, HttpError, requireFeature } from '@/lib/auth';
 import { search } from '@/lib/requests';
 import type { MediaType } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
 export const GET = handler(async (req) => {
-  await requireUser();
+  await requireFeature('request');
   const url = new URL(req.url);
   const type = url.searchParams.get('type') as MediaType;
   const q = (url.searchParams.get('q') ?? '').trim().slice(0, 100);

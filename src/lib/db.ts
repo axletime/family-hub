@@ -7,6 +7,7 @@ import { getConfig, registerOverrideLoader, setConnectionOverrides } from './con
 import { hashPin } from './pin';
 import { decryptSecret, encryptSecret } from './secretbox';
 import { CONNECTION_VARS, SECRET_VARS } from './connectionFields';
+import { defaultGroupAccess, FEATURE_IDS, type Access, type GroupAccess, type GroupId } from './features';
 
 export type Role = 'admin' | 'member';
 export type MediaType = 'movie' | 'tv' | 'music';
@@ -21,6 +22,9 @@ export interface UserRow {
   created_at: string;
   notify_topic: string | null;
   notify_prefs: string | null;
+  user_group: GroupId;
+  /** Length of the current PIN, learnt when it is set or used to sign in (null = not known yet). */
+  pin_len: number | null;
 }
 
 export interface RequestRow {
@@ -110,6 +114,34 @@ function migrate(db: Database.Database) {
   const cols = new Set((db.prepare('PRAGMA table_info(users)').all() as { name: string }[]).map((c) => c.name));
   if (!cols.has('notify_topic')) db.exec('ALTER TABLE users ADD COLUMN notify_topic TEXT');
   if (!cols.has('notify_prefs')) db.exec('ALTER TABLE users ADD COLUMN notify_prefs TEXT');
+  if (!cols.has('user_group')) {
+    // Groups: existing admins join Admin, everyone else joins Home.
+    db.exec("ALTER TABLE users ADD COLUMN user_group TEXT NOT NULL DEFAULT 'home'");
+    db.exec("UPDATE users SET user_group = CASE role WHEN 'admin' THEN 'admin' ELSE 'home' END");
+  }
+  if (!cols.has('pin_len')) db.exec('ALTER TABLE users ADD COLUMN pin_len INTEGER');
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS auth_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      at INTEGER NOT NULL,
+      ip TEXT NOT NULL,
+      network TEXT NOT NULL,
+      user_id INTEGER,
+      user_name TEXT,
+      success INTEGER NOT NULL,
+      reason TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_auth_events_ip ON auth_events(ip, at);
+    CREATE INDEX IF NOT EXISTS idx_auth_events_user ON auth_events(user_id, at);
+    CREATE TABLE IF NOT EXISTS cameras (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      main_url TEXT NOT NULL,
+      sub_url TEXT,
+      position INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
 }
 
 function seedAdmin(db: Database.Database) {
@@ -124,11 +156,12 @@ function seedAdmin(db: Database.Database) {
         '[family-hub] Sign in and change it from Admin > Family members.',
     );
   }
-  db.prepare('INSERT INTO users (name, pin_hash, role, colour) VALUES (?, ?, ?, ?)').run(
+  db.prepare("INSERT INTO users (name, pin_hash, role, colour, user_group, pin_len) VALUES (?, ?, ?, ?, 'admin', ?)").run(
     cfg.adminName,
     hashPin(pin),
     'admin',
     '#1B4F8A',
+    pin.length,
   );
   console.log(`[family-hub] Seeded admin account "${cfg.adminName}".`);
 }
@@ -241,8 +274,12 @@ export interface Settings {
   lidarrQualityProfileId: number | null;
   lidarrMetadataProfileId: number | null;
   haEntities: string[];
-  /** Whether non-admins can change heating and hot water (default on). */
+  /** Legacy (pre-groups) switch; now seeds the Home group's "haControl" permission. */
   familyCanControlHeating: boolean;
+  /** New and changed PINs must be at least 6 digits (default on). */
+  requireLongPins: boolean;
+  /** IPs / CIDRs of reverse proxies whose X-Forwarded-* headers are trusted ("private" = any private address). */
+  trustedProxies: string;
   notificationsEnabled: boolean;
   /** From the Connections page (or .env); read-only here. */
   ntfyUrl: string;
@@ -267,6 +304,8 @@ export function getSettings(): Settings {
     lidarrMetadataProfileId: num('lidarrMetadataProfileId', cfg.lidarr.metadataProfileId),
     haEntities: s.haEntities !== undefined ? JSON.parse(s.haEntities) : cfg.ha.entities,
     familyCanControlHeating: s.familyCanControlHeating !== undefined ? s.familyCanControlHeating === 'true' : true,
+    requireLongPins: s.requireLongPins !== undefined ? s.requireLongPins === 'true' : true,
+    trustedProxies: s.trustedProxies ?? (process.env.TRUST_PROXY ?? '').trim(),
     notificationsEnabled: s.notificationsEnabled !== undefined ? s.notificationsEnabled === 'true' : cfg.ntfy.enabled,
     ntfyUrl: cfg.ntfy.url,
     ntfyTopicPrefix: s.ntfyTopicPrefix || cfg.ntfy.topicPrefix,
@@ -284,4 +323,42 @@ export function saveSettings(patch: Partial<Settings>) {
     }
   });
   tx();
+}
+
+/* ---------- Groups & permissions ---------- */
+
+const ACCESS_VALUES: Access[] = ['off', 'on', 'lan'];
+
+/** Saved group permissions merged over the defaults (so new features get sensible values). */
+export function getGroupAccess(): GroupAccess {
+  const row = getDb().prepare("SELECT value FROM settings WHERE key = 'groupAccess'").get() as { value: string } | undefined;
+  const def = defaultGroupAccess(getSettings().familyCanControlHeating);
+  if (!row) return def;
+  let saved: Partial<GroupAccess> = {};
+  try {
+    saved = JSON.parse(row.value);
+  } catch {
+    return def;
+  }
+  const merge = (g: 'admin' | 'home' | 'outside') => {
+    const out = { ...def[g] };
+    for (const f of FEATURE_IDS) {
+      const v = saved[g]?.[f];
+      if (v && ACCESS_VALUES.includes(v)) out[f] = g === 'admin' && v === 'off' ? 'on' : v;
+    }
+    return out;
+  };
+  const name = (v: unknown, fb: string) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 24) : fb);
+  return {
+    names: { home: name(saved.names?.home, def.names.home), outside: name(saved.names?.outside, def.names.outside) },
+    admin: merge('admin'),
+    home: merge('home'),
+    outside: merge('outside'),
+  };
+}
+
+export function saveGroupAccess(next: GroupAccess) {
+  getDb()
+    .prepare("INSERT INTO settings (key, value) VALUES ('groupAccess', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+    .run(JSON.stringify(next));
 }

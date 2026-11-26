@@ -5,6 +5,7 @@ import { KIND_FOR_MEDIA } from './arr';
 import * as svc from './services';
 import { queueNotification } from './notify';
 import { HttpError, type SessionUser } from './auth';
+import { canUse } from './features';
 import type { MediaType, RequestStatus, RequestView, SearchResult } from './types';
 
 const ACTIVE: RequestStatus[] = ['pending', 'approved', 'downloading', 'available'];
@@ -111,8 +112,10 @@ export async function createRequest(
   const row = db.prepare('SELECT * FROM requests WHERE id = ?').get(id) as RequestRow;
 
   // Admins skip the approval queue; otherwise respect the toggle.
-  if (!getSettings().requireApproval || user.role === 'admin') {
-    await sendToArr(row, user.role === 'admin' ? user.id : undefined);
+  // People who can approve requests do not need to wait for approval themselves.
+  const approver = user.role === 'admin' || canUse(user, 'approve');
+  if (!getSettings().requireApproval || approver) {
+    await sendToArr(row, approver ? user.id : undefined);
   } else {
     queueNotification('newRequest', id);
   }

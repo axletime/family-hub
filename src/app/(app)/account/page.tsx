@@ -1,12 +1,13 @@
 'use client';
 import { useState } from 'react';
-import { api } from '@/components/api';
+import { api, useApi } from '@/components/api';
 import { Avatar, ErrorNote } from '@/components/ui';
 import { useMe } from '@/components/useMe';
 import NotificationsCard from '@/components/NotificationsCard';
 
 export default function AccountPage() {
   const me = useMe();
+  const pinMin = useApi<{ pinMin?: number }>('/api/auth/me').data?.pinMin ?? 4;
   const [currentPin, setCurrentPin] = useState('');
   const [newPin, setNewPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
@@ -40,15 +41,16 @@ export default function AccountPage() {
           <Avatar name={me.name} colour={me.colour} size="h-14 w-14 text-xl" />
           <div>
             <h1 className="text-2xl font-bold">{me.name}</h1>
-            <p className="text-sm text-slate-500 dark:text-slate-400">{me.role === 'admin' ? 'Administrator' : 'Family member'}</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">{me.groupName}</p>
           </div>
         </div>
       )}
       <form onSubmit={save} className="card space-y-4 p-5">
         <h2 className="card-title">Change my PIN</h2>
         {pinInput(currentPin, setCurrentPin, 'Current PIN')}
-        {pinInput(newPin, setNewPin, 'New PIN (4–8 digits)')}
+        {pinInput(newPin, setNewPin, `New PIN (${pinMin}–8 digits)`)}
         {pinInput(confirmPin, setConfirmPin, 'Confirm new PIN')}
+        <p className="text-xs text-slate-500 dark:text-slate-400">Changing your PIN signs you out on your other devices.</p>
         {msg && (msg.ok ? <p className="rounded-xl bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">{msg.text}</p> : <ErrorNote>{msg.text}</ErrorNote>)}
         <button className="btn-primary w-full">Save new PIN</button>
       </form>
