@@ -44,26 +44,28 @@ The plan is to run Family Hub on the **currently unused Unraid server at `192.16
 
 ## 1. Get your API keys and tokens
 
+You no longer need to edit `.env` for these. Sign in as an admin and open **Admin › Settings › Connections** (on a phone: **More › Connections & API keys**). Paste each address and key, press **Test connection**, then **Save**. Changes apply straight away, with no restart. See [Connections page](#connections-page) below for how it works.
+
 ### Sonarr, Radarr and Lidarr
 In each app go to **Settings › General**. Under **Security** (on older versions, **Security / API**) copy the **API Key**. If it's hidden, tick *Show Advanced* at the top.
 
-- Sonarr: `http://192.168.1.200:8989/settings/general` → `SONARR_API_KEY`
-- Radarr: `http://192.168.1.200:7878/settings/general` → `RADARR_API_KEY`
-- Lidarr: `http://192.168.1.200:8686/settings/general` → `LIDARR_API_KEY`
+- Sonarr: `http://192.168.1.200:8989/settings/general` → Connections › Sonarr › API key
+- Radarr: `http://192.168.1.200:7878/settings/general` → Connections › Radarr › API key
+- Lidarr: `http://192.168.1.200:8686/settings/general` → Connections › Lidarr › API key
 
 ### Home Assistant long-lived access token
 1. In Home Assistant, click your **profile** (your name, bottom-left of the sidebar).
 2. Open the **Security** tab.
 3. Scroll to **Long-lived access tokens** and click **Create token**.
-4. Name it `Family Hub` and copy the token straight away (it is only shown once). This is `HA_TOKEN`.
-5. Set `HA_URL` to your Home Assistant address, e.g. `http://192.168.1.50:8123`.
+4. Name it `Family Hub` and copy the token straight away (it is only shown once).
+5. Paste it into **Connections › Home Assistant**, together with your Home Assistant address, e.g. `http://192.168.1.50:8123`.
 
 > The token has the same rights as the user who created it. To limit what Family Hub can do, create a separate non-admin Home Assistant user for it. Family Hub will only toggle entities that are on its dashboard list, and only lights, switches, fans and input booleans.
 
 To find entity IDs, go to **Settings › Devices & services › Entities** in Home Assistant. Examples: `light.living_room`, `sensor.outdoor_temperature`, `person.andrew`.
 
 ### Plex (optional)
-Family Hub checks `PLEX_URL/identity`, which normally works without a token. If your server needs one, see Plex's guide *"Finding an authentication token / X-Plex-Token"* and set `PLEX_TOKEN`.
+Family Hub checks `PLEX_URL/identity`, which normally works without a token. If your server needs one, see Plex's guide *"Finding an authentication token / X-Plex-Token"* and paste it into **Connections › Plex**.
 
 ### TMDB (optional, for better recommendations)
 Recommendations work without this, but a free TMDB key gives the personalised "Because you have …" rows for both TV and films.
@@ -72,13 +74,24 @@ Recommendations work without this, but a free TMDB key gives the personalised "B
 2. Click your avatar › **Settings** › **API** (or go to `https://www.themoviedb.org/settings/api`).
 3. Click **Create** / **Request an API key**, choose **Developer**, accept the terms and fill in the short form. For personal use, "Family Hub – home media requests" is fine as the description, and you can use any URL (e.g. `http://192.168.1.201:3000`).
 4. Copy the **API Key** (the short one). The long **API Read Access Token** also works.
-5. Put it in `.env` as `TMDB_API_KEY=...`, then rebuild and restart (see *Updating*).
+5. Paste it into **Admin › Settings › Connections › TMDB**, press **Test connection**, then **Save**. Recommendations refresh straight away.
 
-Admin › Settings shows whether the key is set. The key is only used by the server, and results are cached for 6 hours (`REC_CACHE_HOURS`).
+The Connections page shows whether the key is set. The key is only used by the server, and results are cached for 6 hours (`REC_CACHE_HOURS`).
 
 **Without a key:** TV recommendations come from TVmaze (no key needed) and film recommendations come from Radarr's own discover lists. If neither is available, admins see a hint on the Discover page and the dashboard carries on as normal.
 
 Requests from recommendations go through Sonarr/Radarr lookups (TVDB ID for Sonarr, TMDB ID for Radarr), exactly like a normal search.
+
+### Connections page
+
+**Admin › Settings › Connections** has a section for Sonarr, Radarr, Lidarr, Plex, Home Assistant, TMDB, ntfy, the webhook shared secret and the hub's public address. Only admins can open it.
+
+- **Where values come from.** A value saved on this page takes priority. If nothing is saved, the value from `.env` is used, and failing that the built-in default. Each field shows a badge: **Saved in hub**, **.env** or **Not set**. Existing setups with keys in `.env` keep working unchanged.
+- **Keys stay hidden.** Saved keys and tokens are never sent back to the browser. You only see the last four characters, e.g. `••••••••abcd`. Leave a key field blank when saving to keep the current one.
+- **Clear.** Removes the value saved in the hub so the `.env` value (or the default) applies again.
+- **Test connection.** Runs on the server, using what you have typed even if it isn't saved yet. A blank key field uses the current key. You get the version on success, or a readable error such as `unreachable (ECONNREFUSED)` or `HTTP 401 — the key or token was rejected`. The ntfy test publishes to a throwaway topic. In demo mode, nothing is contacted.
+- **Applies straight away.** Status tiles, library lookups, recommendations and the download checker pick up the change without a restart.
+- **Encryption.** Keys are stored in the SQLite database encrypted with AES-256-GCM. The encryption key is taken from `APP_SECRET`, if set. Otherwise it is generated on first use and kept in `/data/.secret-key` (readable only by the container user). **Back up that file along with the rest of the data folder.** If the key file is lost or `APP_SECRET` changes, saved keys can't be read. The page then falls back to `.env` and marks those fields so you can re-enter them.
 
 ---
 
@@ -100,12 +113,13 @@ scp -r family_hub root@192.168.1.201:/mnt/user/appdata/family-hub-src
    ```bash
    cd /mnt/user/appdata/family-hub-src
    cp .env.example .env
-   nano .env        # fill in ADMIN_PIN, the API keys, HA_URL and HA_TOKEN
+   nano .env        # only ADMIN_PIN is needed; add API keys later in Admin › Settings › Connections
    ```
 3. Go to **Docker** and scroll down to **Compose**. Click **Add New Stack** and name it `family-hub`.
 4. Click the stack's cog › **Edit Stack** › **Advanced** and set the **stack directory** to `/mnt/user/appdata/family-hub-src`. Alternatively, paste the contents of `docker-compose.yml` into the compose editor and the contents of `.env` into the ENV editor.
 5. Click **Compose Up**. The first build takes a few minutes.
 6. Open **`http://192.168.1.201:3000`** and sign in as **Andrew** with your `ADMIN_PIN`.
+7. Go to **Admin › Settings › Connections** and add your addresses and API keys.
 
 You can do the same from the terminal without the plugin:
 ```bash
@@ -133,19 +147,9 @@ docker compose up -d --build
    | Path | Data | `/data` | `/mnt/user/appdata/family-hub` |
    | Variable | ADMIN_NAME | `ADMIN_NAME` | `Andrew` |
    | Variable | ADMIN_PIN | `ADMIN_PIN` | *your 4–8 digit PIN* |
-   | Variable | SONARR_URL | `SONARR_URL` | `http://192.168.1.200:8989` |
-   | Variable | SONARR_API_KEY | `SONARR_API_KEY` | *key* |
-   | Variable | RADARR_URL | `RADARR_URL` | `http://192.168.1.200:7878` |
-   | Variable | RADARR_API_KEY | `RADARR_API_KEY` | *key* |
-   | Variable | LIDARR_URL | `LIDARR_URL` | `http://192.168.1.200:8686` |
-   | Variable | LIDARR_API_KEY | `LIDARR_API_KEY` | *key* |
-   | Variable | PLEX_URL | `PLEX_URL` | `http://192.168.1.202:32400` |
-   | Variable | HA_URL | `HA_URL` | *your Home Assistant URL* |
-   | Variable | HA_TOKEN | `HA_TOKEN` | *long-lived token* |
-   | Variable | HA_ENTITIES | `HA_ENTITIES` | `light.living_room,sensor.outdoor_temperature` |
    | Variable | TZ | `TZ` | `Europe/London` |
 
-   Every other variable in `.env.example` is optional.
+   That's all that's required. Add the service addresses and API keys afterwards in **Admin › Settings › Connections**. Every other variable in `.env.example` is optional and acts as a fallback.
 4. Click **Apply**, then open the WebUI.
 
 > The container runs as `nobody:users` (99:100), the usual Unraid convention. If you created the appdata folder by hand as root and the container can't write to it, run `chown -R 99:100 /mnt/user/appdata/family-hub`.
@@ -250,13 +254,13 @@ docker run -d --name ntfy --restart unless-stopped -p 8080:80 \
   binwiederhier/ntfy serve
 ```
 
-Then set `NTFY_URL=http://192.168.1.201:8080` in your `.env` (or under **Admin › Settings › Push notifications**). `NTFY_UPSTREAM_BASE_URL` lets the iPhone app get instant alerts from a self-hosted server. Only a "wake up" ping goes via ntfy.sh, never the message itself.
+Then set the ntfy server to `http://192.168.1.201:8080` under **Admin › Settings › Connections › ntfy** (or `NTFY_URL` in `.env`). `NTFY_UPSTREAM_BASE_URL` lets the iPhone app get instant alerts from a self-hosted server. Only a "wake up" ping goes via ntfy.sh, never the message itself.
 
 **Option B: the public ntfy.sh server.** Nothing to install. Leave `NTFY_URL` as `https://ntfy.sh`. Each person's topic has a long random suffix, so nobody can guess it, but anyone who learns a topic name could read its alerts.
 
 > **Alerts away from home:** a self-hosted ntfy on `192.168.1.201` only works while the phone is on your home Wi-Fi (or VPN). For alerts anywhere, either use ntfy.sh, or expose your ntfy server securely (e.g. Tailscale/WireGuard, or a reverse proxy with HTTPS and an access token).
 
-**Optional access token:** if you lock your ntfy server down (`auth-default-access: deny-all`), create a user and token with `docker exec -it ntfy ntfy user add --role=admin familyhub` and `docker exec -it ntfy ntfy token add familyhub`. Then set `NTFY_TOKEN=tk_...` (or paste it into Admin › Settings, where it is stored server-side and never shown again). Each phone then also needs a login in the ntfy app.
+**Optional access token:** if you lock your ntfy server down (`auth-default-access: deny-all`), create a user and token with `docker exec -it ntfy ntfy user add --role=admin familyhub` and `docker exec -it ntfy ntfy token add familyhub`. Then set `NTFY_TOKEN=tk_...` (or paste it into Admin › Settings › Connections › ntfy, where it is stored encrypted and never shown again). Each phone then also needs a login in the ntfy app.
 
 ### Step 2: each person subscribes on their phone
 1. Install the **ntfy** app: [iPhone](https://apps.apple.com/app/ntfy/id1625396347) or Android ([Play Store](https://play.google.com/store/apps/details?id=io.heckel.ntfy) / [F-Droid](https://f-droid.org/packages/io.heckel.ntfy/)).
@@ -267,7 +271,7 @@ Then set `NTFY_URL=http://192.168.1.201:8080` in your `.env` (or under **Admin �
 If a topic is ever shared by mistake, press **New topic** and subscribe again.
 
 ### Optional: instant "On Import" webhooks
-1. Set `WEBHOOK_SECRET` in `.env` to a long random string (e.g. `openssl rand -hex 24`) and restart the container.
+1. Set the webhook shared secret in **Admin › Settings › Connections** to a long random string (e.g. `openssl rand -hex 24`). (`WEBHOOK_SECRET` in `.env` also works.)
 2. In Sonarr go to **Settings › Connect › + › Webhook**. Tick **On Import** (called **On File Import** in newer versions, **On Download** in older ones; **On Release Import** in Lidarr). Set:
    - URL: `http://192.168.1.201:3000/api/webhooks/sonarr?secret=YOUR_SECRET`
    - Method: `POST`
@@ -303,38 +307,39 @@ DEMO_MODE=true DATA_DIR=./data ADMIN_PIN=1234 npm run dev
 
 ## Configuration reference
 
-All settings are environment variables. See `.env.example` for the full annotated list. Some can also be changed in **Admin › Settings** at runtime, and the values set there are stored in the database and override the environment.
+All settings can be environment variables; see `.env.example` for the full annotated list. **The minimum `.env` is just `ADMIN_PIN`** (plus `TZ`, and optionally `APP_SECRET`). The addresses, keys and tokens marked ★ can be set in **Admin › Settings › Connections** instead. Other options marked ☆ are in **Admin › Settings**. Values saved there are stored in the database and take priority over the environment, which remains the fallback.
 
 | Variable | Default | Notes |
 |---|---|---|
 | `DEMO_MODE` | `false` | Mock data, so no real services are contacted |
+| `APP_SECRET` | – | Optional. Encrypts keys saved on the Connections page. If unset, a key is generated in `/data/.secret-key`; keep that file with your data backups. Changing it means re-entering saved keys. |
 | `ADMIN_NAME` / `ADMIN_PIN` | `Andrew` / – | Only used to create the first admin when the database is empty. Without a valid PIN, a random one is printed to the container log. |
 | `COOKIE_SECURE` | `false` | Set to `true` **only** behind HTTPS |
 | `SESSION_DAYS` | `30` | How long people stay signed in |
 | `REQUIRE_APPROVAL` | `false` | Initial value of the approval toggle |
-| `SONARR_URL`, `RADARR_URL`, `LIDARR_URL` | `http://192.168.1.200:{8989,7878,8686}` | |
-| `*_API_KEY` | – | Required for each *arr app you want to use |
+| `SONARR_URL`, `RADARR_URL`, `LIDARR_URL` ★ | `http://192.168.1.200:{8989,7878,8686}` | |
+| `*_API_KEY` ★ | – | Required for each *arr app you want to use |
 | `*_ROOT_FOLDER`, `*_QUALITY_PROFILE_ID`, `LIDARR_METADATA_PROFILE_ID` | first available | Can also be picked from dropdowns in Settings |
-| `PLEX_URL` / `PLEX_TOKEN` | `http://192.168.1.202:32400` / – | |
-| `HA_URL` / `HA_TOKEN` / `HA_ENTITIES` | placeholder / – / – | |
+| `PLEX_URL` / `PLEX_TOKEN` ★ | `http://192.168.1.202:32400` / – | |
+| `HA_URL` / `HA_TOKEN` ★ / `HA_ENTITIES` ☆ | placeholder / – / – | |
 | `*_PUBLIC_URL` | same as the URL | Link used on the dashboard, if different |
-| `TMDB_API_KEY` | – | Optional. Better recommendations (see *TMDB* above) |
+| `TMDB_API_KEY` ★ | – | Optional. Better recommendations (see *TMDB* above) |
 | `TMDB_REGION` / `TMDB_LANGUAGE` | `GB` / `en-GB` | Region and language for TMDB results |
 | `REC_CACHE_HOURS` | `6` | How long recommendations are cached |
-| `PUBLIC_URL` | `http://192.168.1.201:3000` | Hub address used for links in notifications |
+| `PUBLIC_URL` ★ | `http://192.168.1.201:3000` | Hub address used for links in notifications |
 | `NOTIFICATIONS_ENABLED` | `true` | Master switch (also in Admin › Settings) |
-| `NTFY_URL` | `https://ntfy.sh` | ntfy server, e.g. `http://192.168.1.201:8080` |
-| `NTFY_TOKEN` | – | Optional ntfy access token (`tk_...`) or `user:password` |
-| `NTFY_TOPIC_PREFIX` | `familyhub` | Start of each person's topic name |
+| `NTFY_URL` ★ | `https://ntfy.sh` | ntfy server, e.g. `http://192.168.1.201:8080` |
+| `NTFY_TOKEN` ★ | – | Optional ntfy access token (`tk_...`) or `user:password` |
+| `NTFY_TOPIC_PREFIX` ☆ | `familyhub` | Start of each person's topic name |
 | `NOTIFY_POLL_MINUTES` | `5` | How often to check for finished downloads |
-| `WEBHOOK_SECRET` | – | Enables the optional *arr import webhooks |
+| `WEBHOOK_SECRET` ★ | – | Enables the optional *arr import webhooks |
 | `DATA_DIR` | `/data` | Where the SQLite database lives |
 
 ---
 
 ## Security notes
 
-- API keys and tokens are only read by the server. The browser only ever talks to Family Hub, and the settings page only shows *whether* each key is set.
+- API keys and tokens are only read by the server. The browser only ever talks to Family Hub. The Connections page shows only the last four characters of a key and never sends the key itself to the browser. Keys saved there are encrypted at rest (AES-256-GCM), and only admins can view, change or test them.
 - Sessions use a random 256-bit token in an `HttpOnly`, `SameSite=Lax` cookie. Only a SHA-256 hash of the token is stored. Signing out deletes the session. Removing a family member signs them out everywhere.
 - Every state-changing API call must be `application/json`. Together with `SameSite=Lax`, this blocks cross-site request forgery.
 - PIN attempts are rate-limited per profile (5 failures → 15-minute lockout).
@@ -344,13 +349,14 @@ All settings are environment variables. See `.env.example` for the full annotate
 
 ## Troubleshooting
 
-- **A tile says Offline.** Hover over it to see the error, e.g. `unreachable (ECONNREFUSED)` or `HTTP 401`. A 401 means the API key is wrong. Check that the URL works from the Family Hub server: `curl http://192.168.1.200:8989/ping`.
+- **A tile says Offline.** Hover over it to see the error, e.g. `unreachable (ECONNREFUSED)` or `HTTP 401`. A 401 means the API key is wrong. Use **Test connection** on Admin › Settings › Connections, or check that the URL works from the Family Hub server: `curl http://192.168.1.200:8989/ping`.
 - **A request shows "Failed".** The error is shown on the request, e.g. no root folder or a profile problem. Fix it in Admin › Settings, then press **Retry** on the All requests page.
 - **Forgotten admin PIN.** If another admin exists, they can reset it. Otherwise stop the container, delete `/mnt/user/appdata/family-hub/family-hub.db*`, set `ADMIN_PIN` and start again. This removes all profiles and requests.
-- **No recommendations, or only TV ones.** Check Admin › Settings › TMDB. Without a key, films need Radarr to be connected. A wrong key shows as a hint on the Discover page (for admins), and TV falls back to TVmaze.
+- **No recommendations, or only TV ones.** Check Admin › Settings › Connections › TMDB and press **Test connection**. Without a key, films need Radarr to be connected. A wrong key shows as a hint on the Discover page (for admins), and TV falls back to TVmaze.
 - **The phone layout looks old after updating.** Close the home-screen app fully and reopen it, or refresh the page in the browser.
 - **No notifications arrive.** Press **Send test notification** on My account. An error there (e.g. `ntfy unreachable (ECONNREFUSED)` or `HTTP 401`) means the server address or token is wrong. If the test says *sent* but nothing arrives, check the phone is subscribed to exactly the same topic and server, and that notifications are allowed for the ntfy app. With a self-hosted server, the phone must be on your home network.
-- **"Home Assistant is not configured".** Set both `HA_URL` and `HA_TOKEN`, then restart the container.
+- **"Home Assistant is not configured".** Add the address and token in Admin › Settings › Connections › Home Assistant.
+- **A Connections field says the saved value could not be decrypted.** `APP_SECRET` changed or `/data/.secret-key` was lost. Re-enter the key, or press **Clear** to go back to `.env`.
 
 ---
 

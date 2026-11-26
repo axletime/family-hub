@@ -17,6 +17,8 @@ const ADMIN_LINKS = [
   { href: '/admin/users', label: 'Family', short: 'Family', icon: 'users' },
   { href: '/admin/settings', label: 'Settings', short: 'Settings', icon: 'cog' },
 ];
+/** Extra admin shortcuts shown only in the phone "More" sheet. */
+const MORE_ADMIN_LINKS = [{ href: '/admin/settings/connections', label: 'Connections & API keys', icon: 'key' }];
 
 function useTheme() {
   const [dark, setDark] = useState(true);
@@ -78,8 +80,8 @@ function MoreSheet({ user, open, onClose, isActive }: { user: SessionUser; open:
         {user.role === 'admin' && (
           <>
             <div className="px-4 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Admin</div>
-            {ADMIN_LINKS.map((l) => (
-              <Link key={l.href} href={l.href} onClick={onClose} className={`${row} ${isActive(l.href) ? 'bg-accent-600 text-white' : 'hover:bg-slate-100 dark:hover:bg-white/5'}`}>
+            {[...ADMIN_LINKS, ...MORE_ADMIN_LINKS].map((l) => (
+              <Link key={l.href} href={l.href} onClick={onClose} className={`${row} ${(l.href === '/admin/settings' ? isActive(l.href) && !isActive('/admin/settings/connections') : isActive(l.href)) ? 'bg-accent-600 text-white' : 'hover:bg-slate-100 dark:hover:bg-white/5'}`}>
                 <Icon name={l.icon} /> {l.label}
               </Link>
             ))}

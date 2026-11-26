@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { api, useApi } from '@/components/api';
 import { ErrorNote, Icon, Spinner, Toggle } from '@/components/ui';
@@ -45,7 +46,6 @@ interface Env {
   tmdbKeySet: boolean;
   cookieSecure: boolean;
   ntfyTokenSet: boolean;
-  ntfyTokenFromEnv: boolean;
   webhookSecretSet: boolean;
   pollMinutes: number;
 }
@@ -60,7 +60,6 @@ const ARRS = [
 
 export default function SettingsPage() {
   const { data, error, reload } = useApi<{ settings: Settings; environment: Env; notifications: NotificationLog[] }>('/api/admin/settings');
-  const [token, setToken] = useState('');
   const options = useApi<Record<string, Opt>>('/api/admin/options');
   const [s, setS] = useState<Settings | null>(null);
   const [entitiesText, setEntitiesText] = useState('');
@@ -74,7 +73,7 @@ export default function SettingsPage() {
     }
   }, [data, s]);
 
-  const save = async (patch: Partial<Settings> & { ntfyToken?: string | null }) => {
+  const save = async (patch: Partial<Settings>) => {
     setSaving(true);
     setMsg(null);
     try {
@@ -82,7 +81,6 @@ export default function SettingsPage() {
       setS(res.settings);
       setEntitiesText(res.settings.haEntities.join('\n'));
       setMsg({ ok: true, text: 'Settings saved.' });
-      if (patch.ntfyToken !== undefined) setToken('');
       reload();
     } catch (e) {
       setMsg({ ok: false, text: e instanceof Error ? e.message : 'Save failed' });
@@ -103,6 +101,15 @@ export default function SettingsPage() {
         <h1 className="text-2xl font-bold sm:text-3xl">Settings</h1>
         <p className="text-slate-500 dark:text-slate-400">How requests are handled and what appears on the dashboard.</p>
       </div>
+
+      <Link href="/admin/settings/connections" className="card flex items-center gap-4 p-4 transition hover:border-accent-400 sm:p-5">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent-600 text-white"><Icon name="key" /></span>
+        <span className="min-w-0 flex-1">
+          <span className="block font-semibold">Connections &amp; API keys</span>
+          <span className="block break-words text-sm text-slate-500 dark:text-slate-400">Sonarr, Radarr, Lidarr, Plex, Home Assistant, TMDB, ntfy, webhook secret and the hub’s address — no need to edit .env.</span>
+        </span>
+        <span aria-hidden className="text-2xl text-slate-400">›</span>
+      </Link>
 
       {msg && (msg.ok ? <p className="rounded-xl bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">{msg.text}</p> : <ErrorNote>{msg.text}</ErrorNote>)}
 
@@ -201,41 +208,25 @@ export default function SettingsPage() {
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
-            <label className="label" htmlFor="ntfyUrl">ntfy server</label>
-            <input id="ntfyUrl" className="input" inputMode="url" placeholder="https://ntfy.sh" value={s.ntfyUrl} onChange={(e) => field('ntfyUrl', e.target.value)} />
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Self-hosted is recommended, e.g. <code>http://192.168.1.201:8080</code>. Leave blank to use NTFY_URL (default ntfy.sh).</p>
-          </div>
-          <div>
-            <label className="label" htmlFor="publicUrl">Family Hub address (for links in alerts)</label>
-            <input id="publicUrl" className="input" inputMode="url" placeholder="http://192.168.1.201:3000" value={s.publicUrl} onChange={(e) => field('publicUrl', e.target.value)} />
-          </div>
-          <div>
             <label className="label" htmlFor="ntfyPrefix">Topic prefix</label>
             <input id="ntfyPrefix" className="input" placeholder="familyhub" value={s.ntfyTopicPrefix} onChange={(e) => field('ntfyTopicPrefix', e.target.value)} />
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Used for new topics. A random suffix is always added so topics can’t be guessed.</p>
           </div>
-          <div>
-            <label className="label" htmlFor="ntfyToken">Access token (optional)</label>
-            <input id="ntfyToken" type="password" autoComplete="off" className="input" placeholder={env.ntfyTokenSet ? '•••••••• (saved — type to replace)' : 'tk_… or user:password'} value={token} onChange={(e) => setToken(e.target.value)} />
+          <div className="text-sm">
+            <span className="label">Server</span>
+            <p className="break-all">{s.ntfyUrl}</p>
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              {env.ntfyTokenSet ? (env.ntfyTokenFromEnv ? '✓ Set via NTFY_TOKEN.' : '✓ Saved. It stays on the server and is never shown again.') : 'Only needed if your ntfy server requires a login.'}
+              Access token: {env.ntfyTokenSet ? 'set' : 'none'}. Change the server, token or the hub’s address on <Link href="/admin/settings/connections" className="link">Connections</Link>.
             </p>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button
-            className="btn-primary"
-            disabled={saving}
-            onClick={() => save({ ntfyUrl: s.ntfyUrl, publicUrl: s.publicUrl, ntfyTopicPrefix: s.ntfyTopicPrefix, ...(token ? { ntfyToken: token } : {}) })}
-          >
-            {saving ? <Spinner className="h-4 w-4" /> : <Icon name="check" className="h-4 w-4" />} Save notification settings
+          <button className="btn-primary" disabled={saving} onClick={() => save({ ntfyTopicPrefix: s.ntfyTopicPrefix })}>
+            {saving ? <Spinner className="h-4 w-4" /> : <Icon name="check" className="h-4 w-4" />} Save topic prefix
           </button>
-          {env.ntfyTokenSet && !env.ntfyTokenFromEnv && (
-            <button className="btn-ghost" disabled={saving} onClick={() => save({ ntfyToken: null })}>Remove saved token</button>
-          )}
         </div>
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          Checking Sonarr, Radarr and Lidarr every {env.pollMinutes} minute{env.pollMinutes === 1 ? '' : 's'} for finished downloads. Import webhooks: {env.webhookSecretSet ? 'enabled (WEBHOOK_SECRET set).' : 'off (optional — set WEBHOOK_SECRET, see README).'}
+          Checking Sonarr, Radarr and Lidarr every {env.pollMinutes} minute{env.pollMinutes === 1 ? '' : 's'} for finished downloads. Import webhooks: {env.webhookSecretSet ? 'enabled (webhook secret set).' : 'off (optional — set a webhook secret on Connections, see README).'}
         </p>
         <div>
           <h3 className="mb-2 text-sm font-medium">Recent notifications</h3>
@@ -256,27 +247,9 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      <section className="card p-5">
-        <h2 className="mb-1 font-semibold">Connections</h2>
-        <p className="mb-3 text-sm text-slate-500 dark:text-slate-400">These come from the container’s environment variables. Change them in Unraid / docker-compose and restart the container.</p>
-        {env.demoMode && <p className="mb-3 rounded-xl bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">Demo mode is on (DEMO_MODE=true) — mock data is shown and nothing is sent to your real services.</p>}
-        <dl className="grid gap-2 text-sm sm:grid-cols-2">
-          {[
-            ['Sonarr', env.sonarrUrl, env.sonarrKeySet, 'API key'],
-            ['Radarr', env.radarrUrl, env.radarrKeySet, 'API key'],
-            ['Lidarr', env.lidarrUrl, env.lidarrKeySet, 'API key'],
-            ['Plex', env.plexUrl, env.plexTokenSet, 'token (optional)'],
-            ['Home Assistant', env.haUrl, env.haTokenSet, 'token'],
-            ['TMDB (recommendations)', 'api.themoviedb.org', env.tmdbKeySet, 'API key (optional)'],
-          ].map(([n, url, set, what]) => (
-            <div key={n as string} className="rounded-xl bg-slate-100 p-3 dark:bg-white/5">
-              <dt className="font-medium">{n as string}</dt>
-              <dd className="truncate text-slate-500 dark:text-slate-400">{url as string}</dd>
-              <dd className={set ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}>{set ? `✓ ${what} set` : `✗ ${what} not set`}</dd>
-            </div>
-          ))}
-        </dl>
-        <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">Secure cookies: {env.cookieSecure ? 'on (HTTPS only)' : 'off (plain HTTP on your LAN)'}</p>
+      <section className="card space-y-2 p-5 text-sm">
+        {env.demoMode && <p className="rounded-xl bg-amber-500/10 px-3 py-2 text-amber-700 dark:text-amber-300">Demo mode is on (DEMO_MODE=true) — mock data is shown and nothing is sent to your real services.</p>}
+        <p className="text-xs text-slate-500 dark:text-slate-400">Secure cookies: {env.cookieSecure ? 'on (HTTPS only)' : 'off (plain HTTP on your LAN)'}</p>
       </section>
     </div>
   );

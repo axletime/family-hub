@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { handler, HttpError, readJson, requireAdmin } from '@/lib/auth';
-import { getSettings, hasSecretSetting, saveSecretSetting, saveSettings, type Settings } from '@/lib/db';
+import { getSettings, saveSettings, type Settings } from '@/lib/db';
 import { recentNotifications } from '@/lib/notify';
 import { getConfig } from '@/lib/config';
 
@@ -25,8 +25,7 @@ function view() {
       haTokenSet: Boolean(cfg.ha.token),
       tmdbKeySet: Boolean(cfg.tmdb.apiKey),
       cookieSecure: cfg.cookieSecure,
-      ntfyTokenSet: hasSecretSetting('ntfyToken') || Boolean(cfg.ntfy.token),
-      ntfyTokenFromEnv: Boolean(cfg.ntfy.token) && !hasSecretSetting('ntfyToken'),
+      ntfyTokenSet: Boolean(cfg.ntfy.token),
       webhookSecretSet: Boolean(cfg.webhookSecret),
       pollMinutes: cfg.ntfy.pollMinutes,
     },
@@ -41,7 +40,7 @@ export const GET = handler(async () => {
 
 export const PUT = handler(async (req) => {
   await requireAdmin();
-  const b = await readJson<Partial<Settings> & { ntfyToken?: string | null }>(req);
+  const b = await readJson<Partial<Settings>>(req);
   const patch: Partial<Settings> = {};
   if (b.requireApproval !== undefined) patch.requireApproval = Boolean(b.requireApproval);
   for (const k of ['sonarrRootFolder', 'radarrRootFolder', 'lidarrRootFolder'] as const) {
@@ -62,19 +61,12 @@ export const PUT = handler(async (req) => {
     patch.haEntities = [...new Set(ids)].slice(0, 60);
   }
   if (b.notificationsEnabled !== undefined) patch.notificationsEnabled = Boolean(b.notificationsEnabled);
-  for (const k of ['ntfyUrl', 'publicUrl'] as const) {
-    if (b[k] === undefined) continue;
-    const v = String(b[k]).trim().replace(/\/+$/, '');
-    if (v && !/^https?:\/\/[^\s/]+(\/[^\s]*)?$/.test(v)) throw new HttpError(400, `"${v}" is not a valid http(s) address.`);
-    patch[k] = v.slice(0, 300);
-  }
+  // The ntfy server, its token and the public URL are managed on Admin › Settings › Connections.
   if (b.ntfyTopicPrefix !== undefined) {
     const v = String(b.ntfyTopicPrefix).trim().toLowerCase();
     if (v && !/^[a-z0-9-]{1,20}$/.test(v)) throw new HttpError(400, 'The topic prefix can only use letters, numbers and dashes (max 20).');
     patch.ntfyTopicPrefix = v;
   }
-  // Write-only: the token is never sent back to the browser.
-  if (b.ntfyToken !== undefined) saveSecretSetting('ntfyToken', b.ntfyToken ? String(b.ntfyToken).trim().slice(0, 300) : null);
   saveSettings(patch);
   return NextResponse.json(view());
 });

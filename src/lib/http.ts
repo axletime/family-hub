@@ -40,7 +40,9 @@ export async function fetchJson<T>(
   } catch (e) {
     if (e instanceof ServiceError) throw e;
     if ((e as Error).name === 'AbortError') throw new ServiceError(service, 'timed out');
-    const cause = (e as { cause?: { code?: string } }).cause?.code;
-    throw new ServiceError(service, cause ? `unreachable (${cause})` : (e as Error).message);
+    const cause = (e as { cause?: { code?: string; message?: string } }).cause;
+    if (cause?.code) throw new ServiceError(service, `unreachable (${cause.code})`);
+    if ((e as Error).message === 'fetch failed' && cause?.message) throw new ServiceError(service, `unreachable (${cause.message})`);
+    throw new ServiceError(service, (e as Error).message);
   }
 }
