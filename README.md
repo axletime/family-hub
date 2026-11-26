@@ -60,9 +60,19 @@ In each app go to **Settings › General**. Under **Security** (on older version
 4. Name it `Family Hub` and copy the token straight away (it is only shown once).
 5. Paste it into **Connections › Home Assistant**, together with your Home Assistant address, e.g. `http://192.168.1.50:8123`.
 
-> The token has the same rights as the user who created it. To limit what Family Hub can do, create a separate non-admin Home Assistant user for it. Family Hub will only toggle entities that are on its dashboard list, and only lights, switches, fans and input booleans.
+> The token has the same rights as the user who created it. To limit what Family Hub can do, create a separate non-admin Home Assistant user for it. Family Hub will only control entities that are on its dashboard list: it toggles lights, switches, fans and input booleans, and sets heating and hot water (see below).
 
 To find entity IDs, go to **Settings › Devices & services › Entities** in Home Assistant. Examples: `light.living_room`, `sensor.outdoor_temperature`, `person.andrew`.
+
+### Hive heating and hot water (optional)
+1. In Home Assistant, add the **Hive** integration (**Settings › Devices & services › Add integration › Hive**). This creates a `climate.*` entity for the heating and a `water_heater.*` entity for the hot water.
+2. In Family Hub, go to **Admin › Settings › Home Assistant entities**. Under **Heating & hot water**, switch on the entities you want, then press **Save entities**. Your existing lights and switches stay as they are.
+3. The dashboard now shows a **Heating** card and a **Hot water** card:
+   - **Heating:** current and target temperature, − / + in 0.5° steps, Heat / Schedule / Off, whether the heating is on right now, and **Boost** for 30 min, 1 hour or 2 hours at a temperature you choose (with **Cancel boost**).
+   - **Hot water:** Schedule / On / Off, and **Boost** for 30 min or 1 hour.
+4. **Family members can control heating** (Admin › Settings, on by default) controls whether non-admins can change these. When it is off, they see the cards read-only.
+
+Family Hub calls Home Assistant from the server, using a fixed list of allowed services, and only for entities on its list. If the `hive.*` boost services are missing, heating boost falls back to the thermostat's own boost preset. Hive works through its cloud, so changes can take a few seconds to show.
 
 ### Plex (optional)
 Family Hub checks `PLEX_URL/identity`, which normally works without a token. If your server needs one, see Plex's guide *"Finding an authentication token / X-Plex-Token"* and paste it into **Connections › Plex**.
@@ -425,6 +435,7 @@ All settings can be environment variables; see `.env.example` for the full annot
 - **The phone layout looks old after updating.** Close the home-screen app fully and reopen it, or refresh the page in the browser.
 - **No notifications arrive.** Press **Send test notification** on My account. An error there (e.g. `ntfy unreachable (ECONNREFUSED)` or `HTTP 401`) means the server address or token is wrong. If the test says *sent* but nothing arrives, check the phone is subscribed to exactly the same topic and server, and that notifications are allowed for the ntfy app. With a self-hosted server, the phone must be on your home network.
 - **"Home Assistant is not configured".** Add the address and token in Admin › Settings › Connections › Home Assistant.
+- **Hot water boost says it is not available.** Hot water boost needs the Hive integration's `hive.boost_hot_water` service. Check the Hive integration is installed and loaded in Home Assistant.
 - **A Connections field says the saved value could not be decrypted.** `APP_SECRET` changed or `/data/.secret-key` was lost. Re-enter the key, press **Clear** to go back to `.env`, or restore the data folder from a backup (see *Backups*).
 
 ---

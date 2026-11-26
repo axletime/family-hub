@@ -75,7 +75,40 @@ export interface HaEntity {
   kind: HaKind;
   controllable: boolean;
   available: boolean;
+  /** Present for climate.* entities (e.g. Hive heating). */
+  climate?: HaClimate;
+  /** Present for water_heater.* entities (e.g. Hive hot water). */
+  water?: HaWaterHeater;
 }
+
+export interface HaClimate {
+  currentTemperature: number | null;
+  targetTemperature: number | null;
+  minTemp: number;
+  maxTemp: number;
+  step: number;
+  /** hvac mode: heat (manual), auto (schedule), off … */
+  mode: string;
+  modes: string[];
+  /** What the boiler is doing right now: heating, idle, off. */
+  action: string | null;
+  presetMode: string | null;
+  presetModes: string[];
+  boostActive: boolean;
+}
+
+export interface HaWaterHeater {
+  /** Hive: on, off or eco (= schedule). */
+  mode: string;
+  modes: string[];
+}
+
+/** Actions the dashboard can send for heating and hot water. Validated server-side. */
+export type HeatingAction =
+  | { action: 'set_temperature'; temperature: number }
+  | { action: 'set_mode'; mode: string }
+  | { action: 'boost_on'; minutes: number; temperature?: number }
+  | { action: 'boost_off' };
 
 export interface RequestView {
   id: number;

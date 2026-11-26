@@ -32,6 +32,10 @@ const PATHS: Record<string, string> = {
   more: 'M5 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm7 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm7 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4z',
   bell: 'M12 22a2 2 0 0 0 2-2h-4a2 2 0 0 0 2 2zm6-6V11c0-3.07-1.64-5.64-4.5-6.32V4a1.5 1.5 0 0 0-3 0v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z',
   refresh: 'M17.7 6.3A8 8 0 1 0 20 12h-2a6 6 0 1 1-1.8-4.2L13 11h7V4z',
+  minus: 'M4 11h16v2H4z',
+  flame: 'M12 2s5.5 4.6 5.5 10.5a5.5 5.5 0 0 1-11 0c0-2.6 1.3-4.6 2.5-5.8.2 1.9 1.2 3.2 2.6 3.7C11.2 7.8 12 2 12 2z',
+  drop: 'M12 2.5S5 10 5 14.5a7 7 0 0 0 14 0C19 10 12 2.5 12 2.5z',
+  bolt: 'M13 2 4 14h6l-1 8 9-12h-6z',
 };
 
 export function Icon({ name, className = 'h-5 w-5' }: { name: keyof typeof PATHS | string; className?: string }) {

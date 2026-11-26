@@ -15,6 +15,7 @@ interface Settings {
   lidarrQualityProfileId: number | null;
   lidarrMetadataProfileId: number | null;
   haEntities: string[];
+  familyCanControlHeating: boolean;
   notificationsEnabled: boolean;
   ntfyUrl: string;
   ntfyTopicPrefix: string;
@@ -61,6 +62,7 @@ const ARRS = [
 export default function SettingsPage() {
   const { data, error, reload } = useApi<{ settings: Settings; environment: Env; notifications: NotificationLog[] }>('/api/admin/settings');
   const options = useApi<Record<string, Opt>>('/api/admin/options');
+  const heatingList = useApi<{ entities: { entityId: string; name: string }[]; error?: string }>('/api/admin/ha/entities');
   const [s, setS] = useState<Settings | null>(null);
   const [entitiesText, setEntitiesText] = useState('');
   const [saving, setSaving] = useState(false);
@@ -79,7 +81,7 @@ export default function SettingsPage() {
     try {
       const res = await api<{ settings: Settings }>('/api/admin/settings', { method: 'PUT', body: patch });
       setS(res.settings);
-      setEntitiesText(res.settings.haEntities.join('\n'));
+      if (patch.haEntities !== undefined) setEntitiesText(res.settings.haEntities.join('\n'));
       setMsg({ ok: true, text: 'Settings saved.' });
       reload();
     } catch (e) {
@@ -94,6 +96,9 @@ export default function SettingsPage() {
   const env = data.environment;
 
   const field = <K extends keyof Settings>(k: K, v: Settings[K]) => setS({ ...s, [k]: v });
+  const entityLines = entitiesText.split(/[\n,]/).map((x) => x.trim()).filter(Boolean);
+  const toggleListed = (id: string, on: boolean) =>
+    setEntitiesText((on ? [...entityLines.filter((x) => x !== id), id] : entityLines.filter((x) => x !== id)).join('\n'));
 
   return (
     <div className="space-y-6">
@@ -188,12 +193,48 @@ export default function SettingsPage() {
       <section className="card space-y-3 p-5">
         <h2 className="font-semibold">Home Assistant entities</h2>
         <p className="break-words text-sm text-slate-500 dark:text-slate-400">
-          One entity ID per line, in the order you want them shown — e.g. <code>light.living_room</code>, <code>switch.kettle</code>, <code>sensor.outdoor_temperature</code>, <code>climate.hallway</code>, <code>person.andrew</code>. Lights, switches, fans and input booleans get a toggle; everything else is shown as a reading. Find IDs in Home Assistant under Settings › Devices &amp; services › Entities.
+          One entity ID per line, in the order you want them shown — e.g. <code>light.living_room</code>, <code>switch.kettle</code>, <code>sensor.outdoor_temperature</code>, <code>person.andrew</code>. Lights, switches, fans and input booleans get a toggle; thermostats (<code>climate.*</code>) and hot water (<code>water_heater.*</code>) get heating controls; everything else is shown as a reading. Find IDs in Home Assistant under Settings › Devices &amp; services › Entities.
         </p>
+        <div className="rounded-xl border border-slate-200 p-3 dark:border-white/10">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="flex items-center gap-1.5 text-sm font-medium"><Icon name="thermo" className="h-4 w-4" /> Heating &amp; hot water (e.g. Hive)</h3>
+            <button className="btn-ghost px-3 py-1.5" onClick={heatingList.reload}><Icon name="refresh" className="h-4 w-4" /> Refresh</button>
+          </div>
+          {!heatingList.data ? (
+            heatingList.error ? <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Could not load entities: {heatingList.error}</p> : <Spinner />
+          ) : heatingList.data.error ? (
+            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Could not load entities: {heatingList.data.error}</p>
+          ) : !heatingList.data.entities.length ? (
+            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">No thermostats or hot water found in Home Assistant. Add the Hive integration there first.</p>
+          ) : (
+            <ul className="mt-2 divide-y divide-slate-200 dark:divide-white/10">
+              {heatingList.data.entities.map((e) => (
+                <li key={e.entityId} className="flex items-center gap-3 py-2">
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium">{e.name}</span>
+                    <code className="block truncate text-xs text-slate-500 dark:text-slate-400">{e.entityId}</code>
+                  </span>
+                  <Toggle label={`Show ${e.name} on the dashboard`} checked={entityLines.includes(e.entityId)} disabled={saving} onChange={(v) => toggleListed(e.entityId, v)} />
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Switching one on adds it to the list below — press <strong>Save entities</strong> to apply.</p>
+        </div>
         <textarea className="input min-h-[180px] font-mono" value={entitiesText} onChange={(e) => setEntitiesText(e.target.value)} spellCheck={false} />
-        <button className="btn-primary" disabled={saving} onClick={() => save({ haEntities: entitiesText.split(/[\n,]/).map((x) => x.trim()).filter(Boolean) })}>
+        <button className="btn-primary" disabled={saving} onClick={() => save({ haEntities: entityLines })}>
           {saving ? <Spinner className="h-4 w-4" /> : <Icon name="check" className="h-4 w-4" />} Save entities
         </button>
+      </section>
+
+      <section className="card flex items-start gap-4 p-4 sm:p-5">
+        <div className="flex-1">
+          <h2 className="font-semibold">Family members can control heating</h2>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            When on, everyone can change the thermostat, boost the heating and switch the hot water from the dashboard. When off, family members see the heating and hot water cards but can’t change them; admins always can.
+          </p>
+        </div>
+        <Toggle label="Family members can control heating" checked={s.familyCanControlHeating} disabled={saving} onChange={(v) => save({ familyCanControlHeating: v })} />
       </section>
 
       <section className="card space-y-4 p-4 sm:p-5">

@@ -1,10 +1,11 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { CalendarItem, HaEntity, MediaOverview, ServiceStatus } from '@/lib/types';
 import { api, useApi } from '@/components/api';
 import { Empty, ErrorNote, Icon, Poster, Spinner, Toggle } from '@/components/ui';
 import { formatBytes, relativeDay, timeAgo } from '@/components/format';
 import { RecRow } from '@/components/Recommendations';
+import { ClimateCard, WaterCard, type HeatingRequest } from '@/components/HeatingCards';
 
 const SERVICE_ICON: Record<string, string> = { sonarr: 'tv', radarr: 'film', lidarr: 'music', plex: 'sparkle', homeassistant: 'home' };
 const SERVICE_COLOUR: Record<string, string> = { sonarr: '#35C5F4', radarr: '#FFC230', lidarr: '#00A65B', plex: '#E5A00D', homeassistant: '#18BCF2' };
@@ -39,9 +40,29 @@ function StatusTiles({ services }: { services: ServiceStatus[] | undefined }) {
 }
 
 function HaPanel() {
-  const { data, error, loading, setData } = useApi<{ entities: HaEntity[]; error?: string }>('/api/ha', 15000);
+  const { data, error, loading, setData, reload } = useApi<{ entities: HaEntity[]; error?: string; canControlHeating?: boolean }>('/api/ha', 15000);
   const [busy, setBusy] = useState<string | null>(null);
   const [toggleError, setToggleError] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ ok: boolean; text: string } | null>(null);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), toast.ok ? 4000 : 7000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  const sendHeating = async (entityId: string, req: HeatingRequest): Promise<boolean> => {
+    try {
+      const res = await api<{ entities: HaEntity[]; error?: string; canControlHeating?: boolean; note?: string }>('/api/ha/heating', { method: 'POST', body: { entityId, ...req } });
+      setData(res);
+      if (res.note) setToast({ ok: true, text: res.note });
+      return true;
+    } catch (err) {
+      setToast({ ok: false, text: err instanceof Error ? err.message : 'That change did not work.' });
+      reload();
+      return false;
+    }
+  };
 
   const toggle = async (e: HaEntity) => {
     setBusy(e.entityId);
@@ -59,8 +80,10 @@ function HaPanel() {
   };
 
   const entities = data?.entities ?? [];
+  const heating = entities.filter((e) => (e.climate || e.water) && e.available);
   const controls = entities.filter((e) => e.controllable);
-  const readings = entities.filter((e) => !e.controllable);
+  const readings = entities.filter((e) => !e.controllable && !heating.includes(e));
+  const canControlHeating = data?.canControlHeating ?? false;
 
   const iconFor = (e: HaEntity) => (e.kind === 'light' ? 'bulb' : e.kind === 'switch' ? 'power' : e.kind === 'temperature' ? 'thermo' : e.kind === 'presence' ? 'person' : 'gauge');
   const readable = (e: HaEntity) => {
@@ -79,6 +102,11 @@ function HaPanel() {
       {(error || data?.error) && <ErrorNote>{error ?? data?.error}</ErrorNote>}
       {toggleError && <div className="mb-2"><ErrorNote>{toggleError}</ErrorNote></div>}
       {data && !data.error && !entities.length && <Empty>No entities configured yet. An admin can add them in Settings.</Empty>}
+      {heating.length > 0 && (
+        <div className="mb-3 grid grid-cols-1 gap-2">
+          {heating.map((e) => (e.climate ? <ClimateCard key={e.entityId} entity={e} canControl={canControlHeating} send={sendHeating} /> : <WaterCard key={e.entityId} entity={e} canControl={canControlHeating} send={sendHeating} />))}
+        </div>
+      )}
       {controls.length > 0 && (
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {controls.map((e) => (
@@ -101,6 +129,17 @@ function HaPanel() {
               <div className={`mt-1 text-lg font-semibold ${e.kind === 'presence' && e.state === 'home' ? 'text-emerald-600 dark:text-emerald-400' : ''}`}>{readable(e)}</div>
             </div>
           ))}
+        </div>
+      )}
+      {toast && (
+        <div role="status" className="fixed inset-x-3 bottom-24 z-50 mx-auto max-w-md md:bottom-6">
+          <div className={`flex items-start gap-2 rounded-xl px-4 py-3 text-sm font-medium text-white shadow-lg ${toast.ok ? 'bg-accent-600' : 'bg-red-600'}`}>
+            <Icon name={toast.ok ? 'check' : 'x'} className="mt-0.5 h-4 w-4 shrink-0" />
+            <span className="min-w-0 flex-1 break-words">{toast.text}</span>
+            <button type="button" aria-label="Dismiss" className="-m-2 p-2 opacity-80 hover:opacity-100" onClick={() => setToast(null)}>
+              <Icon name="x" className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       )}
     </section>

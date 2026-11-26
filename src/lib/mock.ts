@@ -240,7 +240,20 @@ function haStore() {
       s('light.kitchen', 'off', { friendly_name: 'Kitchen lights' }),
       s('light.garden', 'off', { friendly_name: 'Garden lights' }),
       s('switch.christmas_tree', 'on', { friendly_name: 'Christmas tree' }),
-      s('climate.hallway', 'heat', { friendly_name: 'Hallway thermostat', current_temperature: 19.5 }),
+      // Shaped like the Hive integration's entities.
+      s('climate.heating', 'auto', {
+        friendly_name: 'Heating',
+        hvac_modes: ['heat', 'auto', 'off'],
+        hvac_action: 'heating',
+        current_temperature: 19.5,
+        temperature: 20.5,
+        min_temp: 5,
+        max_temp: 32,
+        target_temp_step: 0.5,
+        preset_modes: ['none', 'boost'],
+        preset_mode: 'none',
+      }),
+      s('water_heater.hot_water', 'eco', { friendly_name: 'Hot water', operation_list: ['eco', 'on', 'off'], current_operation: 'eco' }),
       s('sensor.outdoor_temperature', '4.2', { friendly_name: 'Outdoor temperature', unit_of_measurement: '°C', device_class: 'temperature' }),
       s('sensor.living_room_humidity', '48', { friendly_name: 'Living room humidity', unit_of_measurement: '%', device_class: 'humidity' }),
       s('binary_sensor.front_door', 'off', { friendly_name: 'Front door', device_class: 'door' }),
@@ -256,7 +269,8 @@ export const DEMO_HA_ENTITIES = [
   'light.kitchen',
   'light.garden',
   'switch.christmas_tree',
-  'climate.hallway',
+  'climate.heating',
+  'water_heater.hot_water',
   'sensor.outdoor_temperature',
   'sensor.living_room_humidity',
   'binary_sensor.front_door',
@@ -264,8 +278,112 @@ export const DEMO_HA_ENTITIES = [
   'person.family_member',
 ];
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+// Demo heating: boosts expire, the room warms up while the boiler is on and cools when it isn't.
+function tickHeating(e: any) {
+  const a = e.attributes;
+  const now = Date.now();
+  if (e.entity_id.startsWith('climate.')) {
+    if (a._boost_until && now >= a._boost_until) {
+      a.preset_mode = 'none';
+      a.temperature = a._prev_target ?? a.temperature;
+      delete a._boost_until;
+      delete a._prev_target;
+    }
+    const last = a._last_tick ?? now;
+    const minutes = Math.floor((now - last) / 60000);
+    if (minutes > 0) {
+      const heating = e.state !== 'off' && a.current_temperature < a.temperature;
+      // Warms 0.1° a minute while heating, cools 0.05° a minute (to 15°) when not.
+      const next = heating ? Math.min(a.temperature, a.current_temperature + minutes * 0.1) : Math.max(15, a.current_temperature - minutes * 0.05);
+      a.current_temperature = Math.round(next * 10) / 10;
+      a._last_tick = last + minutes * 60000;
+    } else if (!a._last_tick) a._last_tick = now;
+    a.hvac_action = e.state === 'off' ? 'off' : a.current_temperature < a.temperature ? 'heating' : 'idle';
+  } else if (e.entity_id.startsWith('water_heater.')) {
+    if (a._boost_until && now >= a._boost_until) {
+      e.state = a.current_operation = a._prev_mode ?? 'eco';
+      delete a._boost_until;
+      delete a._prev_mode;
+    }
+  }
+}
+
+/** Raw state of a demo entity (null if unknown). */
+export function demoHaState(id: string): any | null {
+  const e = haStore().get(id);
+  if (!e) return null;
+  tickHeating(e);
+  return e;
+}
+
+/** Demo version of an allowlisted Home Assistant service call. */
+export function demoHaCall(domain: string, service: string, data: Record<string, any>) {
+  const e = haStore().get(String(data.entity_id));
+  if (!e) throw new Error('Demo: entity not found');
+  const a = e.attributes;
+  const minutes = (tp: unknown) => {
+    const [h, m] = String(tp ?? '00:30:00').split(':').map(Number);
+    return (h || 0) * 60 + (m || 0);
+  };
+  switch (`${domain}.${service}`) {
+    case 'climate.set_temperature':
+      a.temperature = data.temperature;
+      if (a.preset_mode === 'boost') a._prev_target = data.temperature;
+      break;
+    case 'climate.set_hvac_mode':
+      e.state = data.hvac_mode;
+      break;
+    case 'climate.set_preset_mode':
+      if (data.preset_mode === 'boost') return demoHaCall('hive', 'boost_heating_on', { entity_id: e.entity_id, time_period: '00:30:00', temperature: Math.min(a.max_temp, (a.temperature ?? 20) + 0.5) });
+      return demoHaCall('hive', 'boost_heating_off', { entity_id: e.entity_id });
+    case 'hive.boost_heating_on':
+      if (a.preset_mode !== 'boost') a._prev_target = a.temperature;
+      a.preset_mode = 'boost';
+      a.temperature = data.temperature ?? a.temperature;
+      a._boost_until = Date.now() + minutes(data.time_period) * 60000;
+      break;
+    case 'hive.boost_heating_off':
+      if (a.preset_mode === 'boost') {
+        a.temperature = a._prev_target ?? a.temperature;
+        a.preset_mode = 'none';
+        delete a._boost_until;
+        delete a._prev_target;
+      }
+      break;
+    case 'water_heater.set_operation_mode':
+      e.state = a.current_operation = data.operation_mode;
+      delete a._boost_until;
+      delete a._prev_mode;
+      break;
+    case 'hive.boost_hot_water':
+      if (data.on_off === 'on') {
+        if (!a._boost_until) a._prev_mode = a.current_operation;
+        e.state = a.current_operation = 'on';
+        a._boost_until = Date.now() + minutes(data.time_period) * 60000;
+      } else if (a._boost_until) {
+        e.state = a.current_operation = a._prev_mode ?? 'eco';
+        delete a._boost_until;
+        delete a._prev_mode;
+      }
+      break;
+    default:
+      throw new Error(`Demo: ${domain}.${service} is not supported`);
+  }
+  tickHeating(e);
+}
+
+/** Demo entities for the admin picker. */
+export function demoHaList(domains: string[]) {
+  return [...haStore().values()]
+    .filter((e) => domains.includes(e.entity_id.split('.')[0]))
+    .map((e) => ({ entityId: e.entity_id as string, name: (e.attributes.friendly_name ?? e.entity_id) as string }));
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
 export function demoHaEntities(ids: string[]): HaEntity[] {
   const store = haStore();
+  for (const e of store.values()) tickHeating(e);
   return (ids.length ? ids : DEMO_HA_ENTITIES).map((id) =>
     store.has(id)
       ? toEntity(store.get(id))

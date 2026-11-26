@@ -241,6 +241,8 @@ export interface Settings {
   lidarrQualityProfileId: number | null;
   lidarrMetadataProfileId: number | null;
   haEntities: string[];
+  /** Whether non-admins can change heating and hot water (default on). */
+  familyCanControlHeating: boolean;
   notificationsEnabled: boolean;
   /** From the Connections page (or .env); read-only here. */
   ntfyUrl: string;
@@ -264,6 +266,7 @@ export function getSettings(): Settings {
     lidarrQualityProfileId: num('lidarrQualityProfileId', cfg.lidarr.qualityProfileId),
     lidarrMetadataProfileId: num('lidarrMetadataProfileId', cfg.lidarr.metadataProfileId),
     haEntities: s.haEntities !== undefined ? JSON.parse(s.haEntities) : cfg.ha.entities,
+    familyCanControlHeating: s.familyCanControlHeating !== undefined ? s.familyCanControlHeating === 'true' : true,
     notificationsEnabled: s.notificationsEnabled !== undefined ? s.notificationsEnabled === 'true' : cfg.ntfy.enabled,
     ntfyUrl: cfg.ntfy.url,
     ntfyTopicPrefix: s.ntfyTopicPrefix || cfg.ntfy.topicPrefix,
