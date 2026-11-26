@@ -1,0 +1,263 @@
+import 'server-only';
+import type { ArrKind } from './config';
+import type { LookupItem, LibraryEntry, ArrOptions } from './arr';
+import type { CalendarItem, HaEntity, QueueItem, RecentItem } from './types';
+import { toEntity } from './ha';
+
+/**
+ * Demo mode: realistic mock data so the UI can be previewed without any real
+ * services. Enabled with DEMO_MODE=true. Artwork is generated SVG, so no
+ * internet access is needed either.
+ */
+
+const COLOURS = ['#1B4F8A', '#2E7D5B', '#8A3B1B', '#6B3FA0', '#A0346B', '#B07D1A', '#2B7A8C', '#4A5568'];
+
+function esc(s: string) {
+  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[c]!);
+}
+
+export function demoPoster(title: string, square = false): string {
+  let h = 0;
+  for (const ch of title) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const c1 = COLOURS[h % COLOURS.length];
+  const c2 = COLOURS[(h >> 3) % COLOURS.length];
+  const w = 300;
+  const hgt = square ? 300 : 450;
+  const words = title.split(' ');
+  const lines: string[] = [];
+  let line = '';
+  for (const w2 of words) {
+    if ((line + ' ' + w2).trim().length > 14) {
+      if (line) lines.push(line);
+      line = w2;
+    } else line = (line + ' ' + w2).trim();
+  }
+  if (line) lines.push(line);
+  const text = lines
+    .slice(0, 4)
+    .map((l, i) => `<text x="150" y="${hgt / 2 - (lines.length - 1) * 18 + i * 36}" font-family="Segoe UI,Helvetica,Arial,sans-serif" font-size="28" font-weight="700" fill="#fff" text-anchor="middle">${esc(l)}</text>`)
+    .join('');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${hgt}" viewBox="0 0 ${w} ${hgt}"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${c1}"/><stop offset="1" stop-color="${c2}" stop-opacity="0.75"/></linearGradient></defs><rect width="100%" height="100%" fill="#0b1220"/><rect width="100%" height="100%" fill="url(#g)"/>${text}</svg>`;
+  return `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
+}
+
+interface DemoItem {
+  externalId: string;
+  title: string;
+  year: number | null;
+  overview: string;
+  meta: string;
+}
+
+const MOVIES: DemoItem[] = [
+  { externalId: '1001', title: 'The Highland Line', year: 2025, overview: 'A retired railway engineer returns to the Scottish Highlands to save the branch line that once connected his village to the world.', meta: '118 min · Drama' },
+  { externalId: '1002', title: 'Starfall Protocol', year: 2026, overview: 'When a decommissioned satellite begins broadcasting coordinates, a small crew races to reach it before anyone else.', meta: '134 min · Science Fiction, Thriller' },
+  { externalId: '1003', title: 'Paddington in Peru', year: 2024, overview: 'Paddington travels to Peru to visit his beloved Aunt Lucy, but a mystery plunges the Brown family into an unexpected adventure.', meta: '106 min · Family, Comedy' },
+  { externalId: '1004', title: 'The Lighthouse Keeper', year: 2023, overview: 'On a remote island off Orkney, a young keeper uncovers letters that rewrite the history of the lighthouse.', meta: '101 min · Mystery' },
+  { externalId: '1005', title: 'Glasgow Nights', year: 2025, overview: 'Three friends, one night, and a city that never quite lets them go.', meta: '97 min · Comedy, Drama' },
+  { externalId: '1006', title: 'Ocean Deep', year: 2022, overview: 'A documentary journey into the least explored places on Earth, narrated by a beloved naturalist.', meta: '89 min · Documentary' },
+  { externalId: '1007', title: 'Dragon Rider Academy', year: 2026, overview: 'A shy apprentice discovers she can talk to the oldest dragon in the kingdom.', meta: '112 min · Animation, Fantasy' },
+  { externalId: '1008', title: 'Midnight Express Delivery', year: 2024, overview: 'A courier with a strict no-questions policy finally opens one of his packages.', meta: '104 min · Action' },
+  { externalId: '1009', title: 'The Last Ceilidh', year: 2021, overview: 'A small-town dance hall faces closure, and the community rallies for one final night.', meta: '95 min · Comedy, Music' },
+  { externalId: '1010', title: 'Quantum Garden', year: 2026, overview: 'A botanist discovers that her greenhouse exists in two timelines at once.', meta: '121 min · Science Fiction' },
+];
+
+const SHOWS: DemoItem[] = [
+  { externalId: '2001', title: 'Loch Ness Detectives', year: 2024, overview: 'Two mismatched detectives investigate strange happenings around Loch Ness.', meta: 'BBC One · 2 seasons · Continuing' },
+  { externalId: '2002', title: 'The Great Bake Off', year: 2010, overview: 'Amateur bakers compete in a series of rounds to be crowned the best amateur baker.', meta: 'Channel 4 · 15 seasons · Continuing' },
+  { externalId: '2003', title: 'Orbital', year: 2025, overview: 'Life aboard the first commercial space station is anything but routine.', meta: 'Apple TV+ · 1 season · Continuing' },
+  { externalId: '2004', title: 'Bluey', year: 2018, overview: 'An inexhaustible six-year-old Blue Heeler dog loves to turn everyday family life into extraordinary adventures.', meta: 'ABC Kids · 3 seasons · Continuing' },
+  { externalId: '2005', title: 'Shetland', year: 2013, overview: 'Detectives solve crimes in the remote and close-knit communities of the Shetland Isles.', meta: 'BBC One · 9 seasons · Continuing' },
+  { externalId: '2006', title: 'Northern Lights', year: 2023, overview: 'A family-run hotel in Tromsø hides secrets as dark as the polar night.', meta: 'Netflix · 2 seasons · Ended' },
+  { externalId: '2007', title: 'Robot Wars Reloaded', year: 2026, overview: 'Home-built robots fight it out in the arena once more.', meta: 'BBC Two · 1 season · Continuing' },
+  { externalId: '2008', title: 'The Crown Estate', year: 2022, overview: 'A sweeping drama about the staff of a grand country house.', meta: 'ITV · 3 seasons · Ended' },
+];
+
+const ARTISTS: DemoItem[] = [
+  { externalId: 'a-3001', title: 'Biffy Clyro', year: null, overview: 'Scottish rock band formed in Kilmarnock, East Ayrshire.', meta: 'Group · Alternative Rock' },
+  { externalId: 'a-3002', title: 'Lewis Capaldi', year: null, overview: 'Scottish singer-songwriter from Glasgow.', meta: 'Person · Pop' },
+  { externalId: 'a-3003', title: 'CHVRCHES', year: null, overview: 'Scottish synth-pop band from Glasgow.', meta: 'Group · Synth-pop' },
+  { externalId: 'a-3004', title: 'Paolo Nutini', year: null, overview: 'Scottish singer-songwriter from Paisley.', meta: 'Person · Soul, Pop' },
+  { externalId: 'a-3005', title: 'Runrig', year: null, overview: 'Scottish Celtic rock band from the Isle of Skye.', meta: 'Group · Celtic Rock' },
+  { externalId: 'a-3006', title: 'The Proclaimers', year: null, overview: 'Scottish duo of twin brothers from Leith.', meta: 'Group · Folk Rock' },
+  { externalId: 'a-3007', title: 'Nina Nesbitt', year: null, overview: 'Scottish singer-songwriter from Edinburgh.', meta: 'Person · Pop' },
+];
+
+const CATALOGUE: Record<ArrKind, DemoItem[]> = { radarr: MOVIES, sonarr: SHOWS, lidarr: ARTISTS };
+
+// Initial "library" contents and anything added during this demo session.
+const g = globalThis as unknown as { __demoLib?: Record<ArrKind, Map<string, { arrId: number; addedAt: number }>> };
+function lib() {
+  if (!g.__demoLib) {
+    const seed = (ids: string[]) => new Map(ids.map((id, i) => [id, { arrId: i + 1, addedAt: 0 }]));
+    g.__demoLib = { radarr: seed(['1003', '1006', '1009']), sonarr: seed(['2002', '2004', '2005']), lidarr: seed(['a-3001', 'a-3005']) };
+  }
+  return g.__demoLib;
+}
+
+const DOWNLOAD_MS = 90_000; // demo items "download" for 90 seconds after being added
+
+export function demoLookup(kind: ArrKind, term: string): LookupItem[] {
+  const t = term.toLowerCase().trim();
+  const exact = t.match(/^(?:tmdb|tvdb|lidarr):(.+)$/);
+  if (exact) {
+    const hit = CATALOGUE[kind].filter((i) => i.externalId === exact[1]);
+    return hit.map((i) => ({ ...i, poster: demoPoster(i.title, kind === 'lidarr'), arrId: lib()[kind].get(i.externalId)?.arrId, raw: i }));
+  }
+  const items = CATALOGUE[kind].filter((i) => !t || i.title.toLowerCase().includes(t) || i.overview.toLowerCase().includes(t));
+  const results = items.length ? items : CATALOGUE[kind].slice(0, 4);
+  return results.map((i) => ({
+    ...i,
+    poster: demoPoster(i.title, kind === 'lidarr'),
+    arrId: lib()[kind].get(i.externalId)?.arrId,
+    raw: i,
+  }));
+}
+
+export function demoFind(kind: ArrKind, externalId: string): DemoItem | undefined {
+  return CATALOGUE[kind].find((i) => i.externalId === externalId);
+}
+
+export function demoLibrary(kind: ArrKind): Map<string, LibraryEntry> {
+  const out = new Map<string, LibraryEntry>();
+  for (const [id, v] of lib()[kind]) out.set(id, { arrId: v.arrId, available: Date.now() - v.addedAt > DOWNLOAD_MS });
+  return out;
+}
+
+export function demoQueuedIds(kind: ArrKind): Set<number> {
+  const s = new Set<number>();
+  for (const v of lib()[kind].values()) if (Date.now() - v.addedAt <= DOWNLOAD_MS) s.add(v.arrId);
+  return s;
+}
+
+export function demoAdd(kind: ArrKind, externalId: string): number {
+  const l = lib()[kind];
+  const existing = l.get(externalId);
+  if (existing) return existing.arrId;
+  const arrId = l.size + 100;
+  l.set(externalId, { arrId, addedAt: Date.now() });
+  return arrId;
+}
+
+export function demoOptions(kind: ArrKind): ArrOptions {
+  const base = { radarr: '/media/movies', sonarr: '/media/tv', lidarr: '/media/music' }[kind];
+  return {
+    rootFolders: [{ path: base, freeSpace: 3.2e12 }, { path: `${base}-4k`, freeSpace: 1.1e12 }],
+    qualityProfiles: [
+      { id: 1, name: 'Any' },
+      { id: 4, name: 'HD-1080p' },
+      { id: 5, name: 'Ultra-HD' },
+    ],
+    metadataProfiles: kind === 'lidarr' ? [{ id: 1, name: 'Standard' }, { id: 2, name: 'Albums only' }] : undefined,
+  };
+}
+
+function hoursFromNow(h: number) {
+  return new Date(Date.now() + h * 3600000).toISOString();
+}
+
+export function demoQueue(): QueueItem[] {
+  const base: QueueItem[] = [
+    { id: 'sonarr-q1', service: 'sonarr', title: 'Shetland', subtitle: 'S09E04 · The Ferry', progress: 62.4, status: 'downloading', timeLeft: '12m', sizeBytes: 2.1e9 },
+    { id: 'radarr-q1', service: 'radarr', title: 'Starfall Protocol', subtitle: '2026', progress: 18.9, status: 'downloading', timeLeft: '1h 4m', sizeBytes: 9.8e9 },
+    { id: 'lidarr-q1', service: 'lidarr', title: 'CHVRCHES', subtitle: 'Screen Violence', progress: 100, status: 'importPending', sizeBytes: 4.2e8 },
+  ];
+  for (const kind of ['radarr', 'sonarr', 'lidarr'] as ArrKind[]) {
+    for (const [id, v] of lib()[kind]) {
+      const elapsed = Date.now() - v.addedAt;
+      if (elapsed > DOWNLOAD_MS) continue;
+      const item = demoFind(kind, id);
+      if (!item) continue;
+      base.unshift({
+        id: `${kind}-demo-${id}`,
+        service: kind,
+        title: item.title,
+        subtitle: item.year ? String(item.year) : undefined,
+        progress: Math.round((elapsed / DOWNLOAD_MS) * 1000) / 10,
+        status: 'downloading',
+        timeLeft: `${Math.max(1, Math.ceil((DOWNLOAD_MS - elapsed) / 60000))}m`,
+        sizeBytes: 4e9,
+      });
+    }
+  }
+  return base;
+}
+
+export function demoRecent(): RecentItem[] {
+  return [
+    { id: 'r1', service: 'sonarr', title: 'The Great Bake Off', subtitle: 'S15E08 · Pastry Week', date: hoursFromNow(-3), poster: demoPoster('The Great Bake Off') },
+    { id: 'r2', service: 'radarr', title: 'Paddington in Peru', subtitle: '2024', date: hoursFromNow(-9), poster: demoPoster('Paddington in Peru') },
+    { id: 'r3', service: 'sonarr', title: 'Bluey', subtitle: 'S03E49 · The Sign', date: hoursFromNow(-20), poster: demoPoster('Bluey') },
+    { id: 'r4', service: 'lidarr', title: 'The Myth of the Happily Ever After', subtitle: 'Biffy Clyro', date: hoursFromNow(-30), poster: demoPoster('Biffy Clyro', true) },
+    { id: 'r5', service: 'radarr', title: 'Ocean Deep', subtitle: '2022', date: hoursFromNow(-52), poster: demoPoster('Ocean Deep') },
+    { id: 'r6', service: 'sonarr', title: 'Shetland', subtitle: 'S09E03 · Fair Isle', date: hoursFromNow(-75), poster: demoPoster('Shetland') },
+  ];
+}
+
+export function demoCalendarTv(): CalendarItem[] {
+  return [
+    { id: 'c1', service: 'sonarr', title: 'Shetland', subtitle: 'S09E05 · Up Helly Aa', date: hoursFromNow(20), poster: demoPoster('Shetland'), hasFile: false },
+    { id: 'c2', service: 'sonarr', title: 'The Great Bake Off', subtitle: 'S15E09 · Semi-final', date: hoursFromNow(44), poster: demoPoster('The Great Bake Off'), hasFile: false },
+    { id: 'c3', service: 'sonarr', title: 'Bluey', subtitle: 'S04E01 · Rain', date: hoursFromNow(70), poster: demoPoster('Bluey'), hasFile: false },
+    { id: 'c4', service: 'sonarr', title: 'Loch Ness Detectives', subtitle: 'S02E07 · The Boathouse', date: hoursFromNow(118), poster: demoPoster('Loch Ness Detectives'), hasFile: false },
+    { id: 'c5', service: 'sonarr', title: 'Shetland', subtitle: 'S09E06 · Final Light', date: hoursFromNow(188), poster: demoPoster('Shetland'), hasFile: false },
+  ];
+}
+
+export function demoCalendarMovies(): CalendarItem[] {
+  return [
+    { id: 'm1', service: 'radarr', title: 'Dragon Rider Academy', subtitle: 'In cinemas · 2026', date: hoursFromNow(96), poster: demoPoster('Dragon Rider Academy'), hasFile: false },
+    { id: 'm2', service: 'radarr', title: 'Quantum Garden', subtitle: 'Digital release · 2026', date: hoursFromNow(14 * 24), poster: demoPoster('Quantum Garden'), hasFile: false },
+    { id: 'm3', service: 'radarr', title: 'Starfall Protocol', subtitle: 'Physical release · 2026', date: hoursFromNow(31 * 24), poster: demoPoster('Starfall Protocol'), hasFile: false },
+  ];
+}
+
+/* ---------------- Home Assistant ---------------- */
+
+const haState = globalThis as unknown as { __demoHa?: Map<string, any> }; // eslint-disable-line @typescript-eslint/no-explicit-any
+
+function haStore() {
+  if (!haState.__demoHa) {
+    const s = (entity_id: string, state: string, attributes: Record<string, unknown>) => [entity_id, { entity_id, state, attributes }] as const;
+    haState.__demoHa = new Map([
+      s('light.living_room', 'on', { friendly_name: 'Living room lights' }),
+      s('light.kitchen', 'off', { friendly_name: 'Kitchen lights' }),
+      s('light.garden', 'off', { friendly_name: 'Garden lights' }),
+      s('switch.christmas_tree', 'on', { friendly_name: 'Christmas tree' }),
+      s('climate.hallway', 'heat', { friendly_name: 'Hallway thermostat', current_temperature: 19.5 }),
+      s('sensor.outdoor_temperature', '4.2', { friendly_name: 'Outdoor temperature', unit_of_measurement: '°C', device_class: 'temperature' }),
+      s('sensor.living_room_humidity', '48', { friendly_name: 'Living room humidity', unit_of_measurement: '%', device_class: 'humidity' }),
+      s('binary_sensor.front_door', 'off', { friendly_name: 'Front door', device_class: 'door' }),
+      s('person.andrew', 'home', { friendly_name: 'Andrew' }),
+      s('person.family_member', 'not_home', { friendly_name: 'Family member' }),
+    ]);
+  }
+  return haState.__demoHa;
+}
+
+export const DEMO_HA_ENTITIES = [
+  'light.living_room',
+  'light.kitchen',
+  'light.garden',
+  'switch.christmas_tree',
+  'climate.hallway',
+  'sensor.outdoor_temperature',
+  'sensor.living_room_humidity',
+  'binary_sensor.front_door',
+  'person.andrew',
+  'person.family_member',
+];
+
+export function demoHaEntities(ids: string[]): HaEntity[] {
+  const store = haStore();
+  return (ids.length ? ids : DEMO_HA_ENTITIES).map((id) =>
+    store.has(id)
+      ? toEntity(store.get(id))
+      : { entityId: id, name: id, domain: id.split('.')[0], state: 'not found', kind: 'other', controllable: false, available: false },
+  );
+}
+
+export function demoHaToggle(id: string) {
+  const e = haStore().get(id);
+  if (e) e.state = e.state === 'on' ? 'off' : 'on';
+}
