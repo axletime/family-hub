@@ -41,9 +41,16 @@ const cache: Map<RecMediaType, RawResult> = (g.__recCache ??= new Map());
 const inflight: Map<RecMediaType, Promise<RawResult>> = (g.__recInflight ??= new Map());
 const tvdbCache: Map<number, { tvdb: number | null; at: number }> = (g.__tvdbCache ??= new Map());
 
+/** Forget all cached recommendations (e.g. after the TMDB key or a service changes). */
+export function clearRecommendationCache() {
+  cache.clear();
+  inflight.clear();
+  tvdbCache.clear();
+}
+
 const TMDB_IMG = 'https://image.tmdb.org/t/p/w342';
 const NO_KEY_HINT =
-  'Add a free TMDB_API_KEY to your .env file for personalised “Because you have…” recommendations (see the README), then recreate the container.';
+  'Add a free TMDB API key on Admin › Settings › Connections for personalised “Because you have…” recommendations (see the README).';
 
 /* ---------------- helpers ---------------- */
 
@@ -266,7 +273,7 @@ async function build(mediaType: RecMediaType): Promise<RawResult> {
     } catch (e) {
       // Bad key / TMDB down: fall through to the free sources but tell the admin.
       const fallback = await buildNoKey(mediaType, at);
-      return { ...fallback, hint: `TMDB could not be used (${e instanceof Error ? e.message : e}). Check TMDB_API_KEY.` };
+      return { ...fallback, hint: `TMDB could not be used (${e instanceof Error ? e.message : e}). Check the TMDB key on Admin › Settings › Connections.` };
     }
   }
   return buildNoKey(mediaType, at);

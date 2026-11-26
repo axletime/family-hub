@@ -199,6 +199,14 @@ export function startStatusPoller() {
   console.log(`[family-hub] Checking request status every ${minutes} minute${minutes === 1 ? '' : 's'}.`);
 }
 
+/** Restart the poller and run a check soon, e.g. after connection details change. */
+export function restartStatusPoller() {
+  const g = globalThis as unknown as { __fhPoller?: NodeJS.Timeout };
+  if (g.__fhPoller) clearInterval(g.__fhPoller);
+  g.__fhPoller = undefined;
+  startStatusPoller();
+}
+
 export async function listRequests(opts: { userId?: number; status?: RequestStatus }) {
   await syncStatuses().catch((e) => console.error('[family-hub] status sync failed', e));
   const where: string[] = [];

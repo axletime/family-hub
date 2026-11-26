@@ -1,7 +1,7 @@
 import 'server-only';
 import crypto from 'node:crypto';
 import { getConfig } from './config';
-import { getDb, getSecretSetting, getSettings, type RequestRow, type UserRow } from './db';
+import { getDb, getSettings, type RequestRow, type UserRow } from './db';
 
 /**
  * Push notifications via ntfy (https://ntfy.sh or a self-hosted server).
@@ -71,7 +71,11 @@ export function regenerateTopic(userId: number): string {
 }
 
 function authHeader(): string | undefined {
-  const token = getSecretSetting('ntfyToken') || getConfig().ntfy.token;
+  return ntfyAuthHeader(getConfig().ntfy.token);
+}
+
+/** "user:password" → Basic auth; anything else (e.g. tk_...) → Bearer token. */
+export function ntfyAuthHeader(token: string): string | undefined {
   if (!token) return undefined;
   // "user:password" → Basic auth; anything else (e.g. tk_...) → Bearer token.
   if (token.includes(':') && !token.startsWith('tk_')) return `Basic ${Buffer.from(token).toString('base64')}`;
@@ -121,7 +125,7 @@ async function publish(m: Message): Promise<'sent' | 'logged'> {
   return 'sent';
 }
 
-function describeError(e: unknown): string {
+export function describeError(e: unknown): string {
   const err = e as Error & { cause?: { code?: string; errors?: { code?: string }[] } };
   if (err?.name === 'TimeoutError' || err?.name === 'AbortError') return 'ntfy timed out';
   const code = err?.cause?.code || err?.cause?.errors?.find((x) => x.code)?.code;

@@ -184,7 +184,8 @@ export interface LibraryEntry {
   available: boolean;
 }
 
-const libraryCache = new Map<ArrKind, { at: number; raw: Any[]; map: Map<string, LibraryEntry> }>();
+const libGlobal = globalThis as unknown as { __fhLibraryCache?: Map<ArrKind, { at: number; raw: Any[]; map: Map<string, LibraryEntry> }> };
+const libraryCache = (libGlobal.__fhLibraryCache ??= new Map());
 
 async function loadLibrary(kind: ArrKind, maxAgeMs: number) {
   const cached = libraryCache.get(kind);

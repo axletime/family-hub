@@ -6,9 +6,49 @@ import 'server-only';
  * Nothing in this file is ever sent to the browser.
  */
 
-function str(name: string, fallback = ''): string {
+/**
+ * Values saved on the Admin › Connections page override the environment.
+ * They live in SQLite (see connections.ts) and are mirrored here in memory,
+ * on globalThis so every route bundle in the process sees the same copy.
+ */
+type OverrideState = { __fhOverrides?: Record<string, string>; __fhOverrideLoader?: () => void; __fhOverrideBusy?: boolean };
+const og = globalThis as unknown as OverrideState;
+
+function overrides(): Record<string, string> {
+  if (og.__fhOverrides) return og.__fhOverrides;
+  if (og.__fhOverrideLoader && !og.__fhOverrideBusy) {
+    og.__fhOverrideBusy = true;
+    try {
+      og.__fhOverrideLoader();
+    } catch (e) {
+      console.error('[family-hub] could not load saved connection settings', e);
+    } finally {
+      og.__fhOverrideBusy = false;
+    }
+  }
+  return og.__fhOverrides ?? {};
+}
+
+/** Replace the in-memory copy of saved connection values (called after every save). */
+export function setConnectionOverrides(values: Record<string, string>) {
+  og.__fhOverrides = values;
+}
+
+export function registerOverrideLoader(fn: () => void) {
+  og.__fhOverrideLoader = fn;
+}
+
+/** The raw environment value, ignoring anything saved in the hub. */
+export function envValue(name: string): string {
   const v = process.env[name];
-  return v === undefined || v === '' ? fallback : v.trim();
+  return v === undefined ? '' : v.trim();
+}
+
+function str(name: string, fallback = ''): string {
+  const o = overrides()[name];
+  if (o) return o.trim();
+  const v = envValue(name);
+  return v === '' ? fallback : v;
 }
 
 function bool(name: string, fallback = false): boolean {

@@ -3,8 +3,10 @@ import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { getConfig } from './config';
+import { getConfig, registerOverrideLoader, setConnectionOverrides } from './config';
 import { hashPin } from './pin';
+import { decryptSecret, encryptSecret } from './secretbox';
+import { CONNECTION_VARS, SECRET_VARS } from './connectionFields';
 
 export type Role = 'admin' | 'member';
 export type MediaType = 'movie' | 'tv' | 'music';
@@ -133,17 +135,99 @@ function seedAdmin(db: Database.Database) {
 
 export function getDb(): Database.Database {
   if (globalForDb.__familyHubDb) return globalForDb.__familyHubDb;
-  const { dataDir } = getConfig();
+  const dataDir = (process.env.DATA_DIR || '').trim() || '/data';
   fs.mkdirSync(dataDir, { recursive: true });
   const db = new Database(path.join(dataDir, 'family-hub.db'));
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   db.pragma('busy_timeout = 5000');
   migrate(db);
-  seedAdmin(db);
   globalForDb.__familyHubDb = db;
+  migrateLegacyConnectionSettings(db);
+  loadConnectionOverrides(db);
+  seedAdmin(db);
   return db;
 }
+
+/* ---------- Connection settings (Admin › Settings › Connections) ---------- */
+
+const CONN = 'conn:';
+const connState = globalThis as unknown as { __fhConnUnreadable?: Set<string> };
+
+/** Names of saved secrets that could not be decrypted (e.g. APP_SECRET was changed). */
+export function unreadableConnectionVars(): Set<string> {
+  return connState.__fhConnUnreadable ?? new Set();
+}
+
+/** Read every saved connection value, decrypting secrets, and publish them to getConfig(). */
+export function loadConnectionOverrides(db: Database.Database = getDb()) {
+  const rows = db.prepare("SELECT key, value FROM settings WHERE key LIKE 'conn:%'").all() as { key: string; value: string }[];
+  const values: Record<string, string> = {};
+  const unreadable = new Set<string>();
+  for (const { key, value } of rows) {
+    const name = key.slice(CONN.length);
+    if (!CONNECTION_VARS.includes(name)) continue;
+    if (SECRET_VARS.includes(name)) {
+      const plain = decryptSecret(value);
+      if (plain === null) {
+        unreadable.add(name);
+        console.warn(`[family-hub] The saved ${name} could not be decrypted (has APP_SECRET or /data/.secret-key changed?). Falling back to .env; re-enter it on Admin › Settings › Connections.`);
+      } else if (plain) values[name] = plain;
+    } else if (value) values[name] = value;
+  }
+  connState.__fhConnUnreadable = unreadable;
+  setConnectionOverrides(values);
+}
+
+/** Has a value been saved in the hub (even if it is currently unreadable)? */
+export function savedConnectionVars(): Set<string> {
+  const rows = getDb().prepare("SELECT key FROM settings WHERE key LIKE 'conn:%'").all() as { key: string }[];
+  return new Set(rows.map((r) => r.key.slice(CONN.length)));
+}
+
+/** Save (string) or remove (null) connection values in one transaction, then reload them. */
+export function saveConnectionValues(patch: Record<string, string | null>) {
+  const db = getDb();
+  const upsert = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value');
+  const del = db.prepare('DELETE FROM settings WHERE key = ?');
+  db.transaction(() => {
+    for (const [name, v] of Object.entries(patch)) {
+      if (!CONNECTION_VARS.includes(name)) continue;
+      if (v === null || v === '') del.run(CONN + name);
+      else upsert.run(CONN + name, SECRET_VARS.includes(name) ? encryptSecret(v) : v);
+    }
+  })();
+  loadConnectionOverrides(db);
+}
+
+/**
+ * Earlier versions kept the ntfy server, public URL and a plain-text ntfy token
+ * in the general settings. Move them into the (encrypted) connection store once.
+ */
+function migrateLegacyConnectionSettings(db: Database.Database) {
+  const legacy: [string, string, boolean][] = [
+    ['secret:ntfyToken', 'NTFY_TOKEN', true],
+    ['ntfyUrl', 'NTFY_URL', false],
+    ['publicUrl', 'PUBLIC_URL', false],
+  ];
+  const get = db.prepare('SELECT value FROM settings WHERE key = ?');
+  const upsert = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING');
+  const del = db.prepare('DELETE FROM settings WHERE key = ?');
+  db.transaction(() => {
+    for (const [oldKey, name, secret] of legacy) {
+      const row = get.get(oldKey) as { value: string } | undefined;
+      if (!row) continue;
+      const v = secret ? row.value.trim() : row.value.trim().replace(/\/+$/, '');
+      if (v) upsert.run(CONN + name, secret ? encryptSecret(v) : v);
+      del.run(oldKey);
+    }
+  })();
+}
+
+registerOverrideLoader(() => {
+  if (globalForDb.__familyHubDb) loadConnectionOverrides(globalForDb.__familyHubDb);
+  else getDb();
+});
 
 /* ---------- Settings (admin-editable, override env defaults) ---------- */
 
@@ -158,24 +242,11 @@ export interface Settings {
   lidarrMetadataProfileId: number | null;
   haEntities: string[];
   notificationsEnabled: boolean;
+  /** From the Connections page (or .env); read-only here. */
   ntfyUrl: string;
   ntfyTopicPrefix: string;
+  /** From the Connections page (or .env); read-only here. */
   publicUrl: string;
-}
-
-/** Secret settings are stored apart from getSettings() so they can never be sent to the browser. */
-export function getSecretSetting(key: 'ntfyToken'): string {
-  const row = getDb().prepare('SELECT value FROM settings WHERE key = ?').get(`secret:${key}`) as { value: string } | undefined;
-  return row?.value ?? '';
-}
-
-export function hasSecretSetting(key: 'ntfyToken'): boolean {
-  return getDb().prepare('SELECT 1 FROM settings WHERE key = ?').get(`secret:${key}`) !== undefined;
-}
-
-export function saveSecretSetting(key: 'ntfyToken', value: string | null) {
-  if (value === null || value === '') getDb().prepare('DELETE FROM settings WHERE key = ?').run(`secret:${key}`);
-  else getDb().prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(`secret:${key}`, value);
 }
 
 export function getSettings(): Settings {
@@ -194,9 +265,9 @@ export function getSettings(): Settings {
     lidarrMetadataProfileId: num('lidarrMetadataProfileId', cfg.lidarr.metadataProfileId),
     haEntities: s.haEntities !== undefined ? JSON.parse(s.haEntities) : cfg.ha.entities,
     notificationsEnabled: s.notificationsEnabled !== undefined ? s.notificationsEnabled === 'true' : cfg.ntfy.enabled,
-    ntfyUrl: (s.ntfyUrl || cfg.ntfy.url).replace(/\/+$/, ''),
+    ntfyUrl: cfg.ntfy.url,
     ntfyTopicPrefix: s.ntfyTopicPrefix || cfg.ntfy.topicPrefix,
-    publicUrl: (s.publicUrl || cfg.publicUrl).replace(/\/+$/, ''),
+    publicUrl: cfg.publicUrl,
   };
 }
 
@@ -205,7 +276,7 @@ export function saveSettings(patch: Partial<Settings>) {
   const stmt = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value');
   const tx = db.transaction(() => {
     for (const [k, v] of Object.entries(patch)) {
-      if (v === undefined) continue;
+      if (v === undefined || k === 'ntfyUrl' || k === 'publicUrl') continue;
       stmt.run(k, k === 'haEntities' ? JSON.stringify(v) : v === null ? '' : String(v));
     }
   });

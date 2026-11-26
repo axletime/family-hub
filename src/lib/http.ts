@@ -1,5 +1,8 @@
 import 'server-only';
 import { getConfig } from './config';
+// Registers the loader for keys saved on Admin › Settings › Connections, so every
+// service client sees them even in route bundles that never touch the database.
+import './db';
 
 export class ServiceError extends Error {
   constructor(public service: string, message: string, public status?: number) {
