@@ -3,8 +3,9 @@ import { useEffect, useState } from 'react';
 import type { CalendarItem, HaEntity, MediaOverview, ServiceStatus } from '@/lib/types';
 import { api, useApi } from '@/components/api';
 import { Empty, ErrorNote, Icon, Poster, Spinner, Toggle } from '@/components/ui';
-import { formatBytes, relativeDay, timeAgo } from '@/components/format';
+import { relativeDay, timeAgo } from '@/components/format';
 import { RecRow } from '@/components/Recommendations';
+import { DownloadQueue } from '@/components/DownloadQueue';
 import { ClimateCard, WaterCard, type HeatingRequest } from '@/components/HeatingCards';
 
 const SERVICE_ICON: Record<string, string> = { sonarr: 'tv', radarr: 'film', lidarr: 'music', plex: 'sparkle', homeassistant: 'home' };
@@ -192,25 +193,6 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3 [&>*]:min-w-0">
         <div className="min-w-0 space-y-6 xl:col-span-2">
           <section className="card p-4">
-            <h2 className="card-title mb-3"><span className="flex items-center gap-2"><Icon name="download" className="h-4 w-4" /> Downloading now</span>{m && <span className="normal-case">{m.queue.length} in queue</span>}</h2>
-            {!m ? <Spinner /> : !m.queue.length ? <Empty>Nothing downloading right now.</Empty> : (
-              <ul className="space-y-3">
-                {m.queue.slice(0, 12).map((q) => (
-                  <li key={q.id}>
-                    <div className="flex flex-col gap-0.5 text-sm sm:flex-row sm:items-baseline sm:justify-between sm:gap-2">
-                      <span className="min-w-0 sm:truncate"><span className="font-medium">{q.title}</span>{q.subtitle && <span className="text-slate-500 dark:text-slate-400"> · {q.subtitle}</span>}</span>
-                      <span className="shrink-0 text-xs text-slate-500 dark:text-slate-400">{q.progress.toFixed(0)}%{q.timeLeft ? ` · ${q.timeLeft} left` : ''}{q.sizeBytes ? ` · ${formatBytes(q.sizeBytes)}` : ''}</span>
-                    </div>
-                    <div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-white/10">
-                      <div className="h-full rounded-full bg-accent-500 transition-all" style={{ width: `${Math.min(100, q.progress)}%` }} />
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-
-          <section className="card p-4">
             <h2 className="card-title mb-3"><span className="flex items-center gap-2"><Icon name="sparkle" className="h-4 w-4" /> Recently added</span></h2>
             {!m ? <Spinner /> : !m.recent.length ? <Empty>Nothing new yet.</Empty> : (
               <div className="scrollbar-thin -mx-1 flex gap-3 overflow-x-auto px-1 pb-2">
@@ -235,8 +217,9 @@ export default function Dashboard() {
           <RecRow type="movie" title="Films you may enjoy" />
         </div>
 
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6 xl:order-first">
           <HaPanel />
+          <DownloadQueue queue={m?.queue} />
           <section className="card p-4">
             <h2 className="card-title mb-3"><span className="flex items-center gap-2"><Icon name="link" className="h-4 w-4" /> Quick links</span></h2>
             <div className="grid grid-cols-2 gap-2">

@@ -177,7 +177,16 @@ export function demoQueue(): QueueItem[] {
     { id: 'sonarr-q1', service: 'sonarr', title: 'Shetland', subtitle: 'S09E04 · The Ferry', progress: 62.4, status: 'downloading', timeLeft: '12m', sizeBytes: 2.1e9 },
     { id: 'radarr-q1', service: 'radarr', title: 'Starfall Protocol', subtitle: '2026', progress: 18.9, status: 'downloading', timeLeft: '1h 4m', sizeBytes: 9.8e9 },
     { id: 'lidarr-q1', service: 'lidarr', title: 'CHVRCHES', subtitle: 'Screen Violence', progress: 100, status: 'importPending', sizeBytes: 4.2e8 },
+    { id: 'sonarr-q2', service: 'sonarr', title: 'Slow Horses', subtitle: 'S05E02 · Missing', progress: 41.7, status: 'downloading', timeLeft: '23m', sizeBytes: 1.6e9 },
+    { id: 'sonarr-q3', service: 'sonarr', title: 'The Traitors', subtitle: 'S04E07', progress: 8.2, status: 'downloading', timeLeft: '48m', sizeBytes: 1.2e9 },
+    { id: 'radarr-q2', service: 'radarr', title: 'Paddington in Peru', subtitle: '2024', progress: 0, status: 'queued', sizeBytes: 6.4e9 },
+    { id: 'sonarr-q4', service: 'sonarr', title: 'Bluey', subtitle: 'S03E41 · Cricket', progress: 0, status: 'queued', sizeBytes: 3.1e8 },
+    { id: 'radarr-q3', service: 'radarr', title: 'Wallace & Gromit: Vengeance Most Fowl', subtitle: '2024', progress: 0, status: 'paused', sizeBytes: 5.2e9 },
+    { id: 'lidarr-q2', service: 'lidarr', title: 'Elbow', subtitle: 'Audio Vertigo', progress: 0, status: 'queued', sizeBytes: 3.6e8 },
   ];
+  // Nudge the first downloads forward over time so refreshes are visible in demo mode.
+  const drift = (Date.now() / 60000) % 30;
+  for (const q of base.slice(0, 2)) q.progress = Math.min(99.9, Math.round((q.progress + drift) * 10) / 10);
   for (const kind of ['radarr', 'sonarr', 'lidarr'] as ArrKind[]) {
     for (const [id, v] of lib()[kind]) {
       const elapsed = Date.now() - v.addedAt;
