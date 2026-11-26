@@ -1,7 +1,9 @@
 import 'server-only';
 import { getDb, getSettings, type RequestRow } from './db';
+import { getConfig } from './config';
 import { KIND_FOR_MEDIA } from './arr';
 import * as svc from './services';
+import { queueNotification } from './notify';
 import { HttpError, type SessionUser } from './auth';
 import type { MediaType, RequestStatus, RequestView, SearchResult } from './types';
 
@@ -111,6 +113,8 @@ export async function createRequest(
   // Admins skip the approval queue; otherwise respect the toggle.
   if (!getSettings().requireApproval || user.role === 'admin') {
     await sendToArr(row, user.role === 'admin' ? user.id : undefined);
+  } else {
+    queueNotification('newRequest', id);
   }
   return getRequest(id)!;
 }
@@ -125,6 +129,7 @@ export async function approveRequest(admin: SessionUser, id: number) {
   if (!row) throw new HttpError(404, 'Request not found.');
   if (!['pending', 'failed', 'declined'].includes(row.status)) throw new HttpError(409, 'This request has already been approved.');
   await sendToArr(row, admin.id);
+  if (row.user_id !== admin.id) queueNotification('approved', id);
   return getRequest(id)!;
 }
 
@@ -133,6 +138,7 @@ export function declineRequest(admin: SessionUser, id: number, note?: string) {
   if (!row) throw new HttpError(404, 'Request not found.');
   if (row.status !== 'pending' && row.status !== 'failed') throw new HttpError(409, 'Only pending requests can be declined.');
   setStatus(id, 'declined', { decidedBy: admin.id, note: note?.slice(0, 500) || '' });
+  if (row.user_id !== admin.id) queueNotification('declined', id);
   return getRequest(id)!;
 }
 
@@ -170,8 +176,27 @@ export async function syncStatuses() {
     if (entry?.available) next = 'available';
     else if (arrId && s.queued.has(arrId)) next = 'downloading';
     else next = 'approved';
-    if (next !== r.status) setStatus(r.id, next, { arrId: arrId ?? undefined });
+    if (next !== r.status) {
+      setStatus(r.id, next, { arrId: arrId ?? undefined });
+      if (next === 'available') queueNotification('available', r.id);
+    }
   }
+}
+
+/**
+ * Background poller: checks Sonarr/Radarr/Lidarr every few minutes so
+ * "available" notifications go out even when nobody has the hub open.
+ * Started once per server process from instrumentation.ts.
+ */
+export function startStatusPoller() {
+  const g = globalThis as unknown as { __fhPoller?: NodeJS.Timeout };
+  if (g.__fhPoller) return;
+  const minutes = Math.max(1, getConfig().ntfy.pollMinutes);
+  const run = () => syncStatuses().catch((e) => console.error('[family-hub] background status check failed', e));
+  g.__fhPoller = setInterval(run, minutes * 60_000);
+  g.__fhPoller.unref?.();
+  setTimeout(run, 15_000).unref?.();
+  console.log(`[family-hub] Checking request status every ${minutes} minute${minutes === 1 ? '' : 's'}.`);
 }
 
 export async function listRequests(opts: { userId?: number; status?: RequestStatus }) {

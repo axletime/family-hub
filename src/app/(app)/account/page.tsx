@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { api } from '@/components/api';
 import { Avatar, ErrorNote } from '@/components/ui';
 import { useMe } from '@/components/useMe';
+import NotificationsCard from '@/components/NotificationsCard';
 
 export default function AccountPage() {
   const me = useMe();
@@ -33,7 +34,7 @@ export default function AccountPage() {
   );
 
   return (
-    <div className="mx-auto max-w-md space-y-5">
+    <div className="mx-auto max-w-xl space-y-5">
       {me && (
         <div className="flex items-center gap-3">
           <Avatar name={me.name} colour={me.colour} size="h-14 w-14 text-xl" />
@@ -51,6 +52,7 @@ export default function AccountPage() {
         {msg && (msg.ok ? <p className="rounded-xl bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">{msg.text}</p> : <ErrorNote>{msg.text}</ErrorNote>)}
         <button className="btn-primary w-full">Save new PIN</button>
       </form>
+      {me && <NotificationsCard isAdmin={me.role === 'admin'} />}
     </div>
   );
 }

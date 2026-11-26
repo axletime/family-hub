@@ -1,10 +1,40 @@
-node_modules
-.next
-out
-data
-*.db
-*.db-*
-.env
-.env.local
+# Dependencies and build output
+node_modules/
+.next/
+out/
+build/
+dist/
 *.tsbuildinfo
 next-env.d.ts
+
+# Secrets — never commit real configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# Databases and runtime data (the /data volume)
+data/
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+fh-test/
+test-data/
+
+# Logs, caches and editor/OS clutter
+*.log
+npm-debug.log*
+.npm/
+.cache/
+coverage/
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Sandbox marker files
+.abacus.donotdelete

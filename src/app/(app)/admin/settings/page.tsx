@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { api, useApi } from '@/components/api';
 import { ErrorNote, Icon, Spinner, Toggle } from '@/components/ui';
-import { formatBytes } from '@/components/format';
+import { formatBytes, formatDateTime } from '@/components/format';
 
 interface Settings {
   requireApproval: boolean;
@@ -14,6 +14,20 @@ interface Settings {
   lidarrQualityProfileId: number | null;
   lidarrMetadataProfileId: number | null;
   haEntities: string[];
+  notificationsEnabled: boolean;
+  ntfyUrl: string;
+  ntfyTopicPrefix: string;
+  publicUrl: string;
+}
+
+interface NotificationLog {
+  id: number;
+  event: string;
+  title: string;
+  status: 'queued' | 'sent' | 'logged' | 'failed';
+  error: string | null;
+  createdAt: string;
+  userName: string | null;
 }
 
 interface Env {
@@ -30,6 +44,10 @@ interface Env {
   haTokenSet: boolean;
   tmdbKeySet: boolean;
   cookieSecure: boolean;
+  ntfyTokenSet: boolean;
+  ntfyTokenFromEnv: boolean;
+  webhookSecretSet: boolean;
+  pollMinutes: number;
 }
 
 type Opt = { rootFolders: { path: string; freeSpace?: number }[]; qualityProfiles: { id: number; name: string }[]; metadataProfiles?: { id: number; name: string }[] } | { error: string };
@@ -41,7 +59,8 @@ const ARRS = [
 ] as const;
 
 export default function SettingsPage() {
-  const { data, error } = useApi<{ settings: Settings; environment: Env }>('/api/admin/settings');
+  const { data, error, reload } = useApi<{ settings: Settings; environment: Env; notifications: NotificationLog[] }>('/api/admin/settings');
+  const [token, setToken] = useState('');
   const options = useApi<Record<string, Opt>>('/api/admin/options');
   const [s, setS] = useState<Settings | null>(null);
   const [entitiesText, setEntitiesText] = useState('');
@@ -55,7 +74,7 @@ export default function SettingsPage() {
     }
   }, [data, s]);
 
-  const save = async (patch: Partial<Settings>) => {
+  const save = async (patch: Partial<Settings> & { ntfyToken?: string | null }) => {
     setSaving(true);
     setMsg(null);
     try {
@@ -63,6 +82,8 @@ export default function SettingsPage() {
       setS(res.settings);
       setEntitiesText(res.settings.haEntities.join('\n'));
       setMsg({ ok: true, text: 'Settings saved.' });
+      if (patch.ntfyToken !== undefined) setToken('');
+      reload();
     } catch (e) {
       setMsg({ ok: false, text: e instanceof Error ? e.message : 'Save failed' });
     } finally {
@@ -166,6 +187,73 @@ export default function SettingsPage() {
         <button className="btn-primary" disabled={saving} onClick={() => save({ haEntities: entitiesText.split(/[\n,]/).map((x) => x.trim()).filter(Boolean) })}>
           {saving ? <Spinner className="h-4 w-4" /> : <Icon name="check" className="h-4 w-4" />} Save entities
         </button>
+      </section>
+
+      <section className="card space-y-4 p-4 sm:p-5">
+        <div className="flex items-start gap-4">
+          <div className="flex-1">
+            <h2 className="font-semibold">Push notifications (ntfy)</h2>
+            <p className="mt-1 break-words text-sm text-slate-500 dark:text-slate-400">
+              Family members get a phone alert when their request is approved, declined or ready to watch, and admins get one when a request needs approval. Each person subscribes to their own private topic from <a href="/account" className="link">My account</a>.
+            </p>
+          </div>
+          <Toggle label="Send push notifications" checked={s.notificationsEnabled} disabled={saving} onChange={(v) => save({ notificationsEnabled: v })} />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label className="label" htmlFor="ntfyUrl">ntfy server</label>
+            <input id="ntfyUrl" className="input" inputMode="url" placeholder="https://ntfy.sh" value={s.ntfyUrl} onChange={(e) => field('ntfyUrl', e.target.value)} />
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Self-hosted is recommended, e.g. <code>http://192.168.1.201:8080</code>. Leave blank to use NTFY_URL (default ntfy.sh).</p>
+          </div>
+          <div>
+            <label className="label" htmlFor="publicUrl">Family Hub address (for links in alerts)</label>
+            <input id="publicUrl" className="input" inputMode="url" placeholder="http://192.168.1.201:3000" value={s.publicUrl} onChange={(e) => field('publicUrl', e.target.value)} />
+          </div>
+          <div>
+            <label className="label" htmlFor="ntfyPrefix">Topic prefix</label>
+            <input id="ntfyPrefix" className="input" placeholder="familyhub" value={s.ntfyTopicPrefix} onChange={(e) => field('ntfyTopicPrefix', e.target.value)} />
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Used for new topics. A random suffix is always added so topics can’t be guessed.</p>
+          </div>
+          <div>
+            <label className="label" htmlFor="ntfyToken">Access token (optional)</label>
+            <input id="ntfyToken" type="password" autoComplete="off" className="input" placeholder={env.ntfyTokenSet ? '•••••••• (saved — type to replace)' : 'tk_… or user:password'} value={token} onChange={(e) => setToken(e.target.value)} />
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              {env.ntfyTokenSet ? (env.ntfyTokenFromEnv ? '✓ Set via NTFY_TOKEN.' : '✓ Saved. It stays on the server and is never shown again.') : 'Only needed if your ntfy server requires a login.'}
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            className="btn-primary"
+            disabled={saving}
+            onClick={() => save({ ntfyUrl: s.ntfyUrl, publicUrl: s.publicUrl, ntfyTopicPrefix: s.ntfyTopicPrefix, ...(token ? { ntfyToken: token } : {}) })}
+          >
+            {saving ? <Spinner className="h-4 w-4" /> : <Icon name="check" className="h-4 w-4" />} Save notification settings
+          </button>
+          {env.ntfyTokenSet && !env.ntfyTokenFromEnv && (
+            <button className="btn-ghost" disabled={saving} onClick={() => save({ ntfyToken: null })}>Remove saved token</button>
+          )}
+        </div>
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          Checking Sonarr, Radarr and Lidarr every {env.pollMinutes} minute{env.pollMinutes === 1 ? '' : 's'} for finished downloads. Import webhooks: {env.webhookSecretSet ? 'enabled (WEBHOOK_SECRET set).' : 'off (optional — set WEBHOOK_SECRET, see README).'}
+        </p>
+        <div>
+          <h3 className="mb-2 text-sm font-medium">Recent notifications</h3>
+          {!data.notifications.length ? (
+            <p className="text-sm text-slate-500 dark:text-slate-400">None sent yet.</p>
+          ) : (
+            <ul className="divide-y divide-slate-200 text-sm dark:divide-white/10">
+              {data.notifications.map((n) => (
+                <li key={n.id} className="flex flex-col gap-0.5 py-2 sm:flex-row sm:items-baseline sm:gap-3">
+                  <span className="min-w-0 flex-1 break-words"><span className="font-medium">{n.userName ?? '—'}</span> · {n.title}</span>
+                  <span className={`shrink-0 text-xs ${n.status === 'failed' ? 'text-red-600 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                    {{ sent: 'Sent', logged: 'Logged (demo)', queued: 'Sending…', failed: `Failed: ${n.error ?? ''}` }[n.status]} · {formatDateTime(n.createdAt)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </section>
 
       <section className="card p-5">

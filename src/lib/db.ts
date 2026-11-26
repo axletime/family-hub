@@ -17,6 +17,8 @@ export interface UserRow {
   role: Role;
   colour: string;
   created_at: string;
+  notify_topic: string | null;
+  notify_prefs: string | null;
 }
 
 export interface RequestRow {
@@ -88,7 +90,24 @@ function migrate(db: Database.Database) {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      dedupe_key TEXT UNIQUE,
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      event TEXT NOT NULL,
+      request_id INTEGER,
+      title TEXT NOT NULL,
+      message TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'queued',
+      error TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at);
   `);
+  // Columns added after the first release: add them to existing databases in place.
+  const cols = new Set((db.prepare('PRAGMA table_info(users)').all() as { name: string }[]).map((c) => c.name));
+  if (!cols.has('notify_topic')) db.exec('ALTER TABLE users ADD COLUMN notify_topic TEXT');
+  if (!cols.has('notify_prefs')) db.exec('ALTER TABLE users ADD COLUMN notify_prefs TEXT');
 }
 
 function seedAdmin(db: Database.Database) {
@@ -138,6 +157,25 @@ export interface Settings {
   lidarrQualityProfileId: number | null;
   lidarrMetadataProfileId: number | null;
   haEntities: string[];
+  notificationsEnabled: boolean;
+  ntfyUrl: string;
+  ntfyTopicPrefix: string;
+  publicUrl: string;
+}
+
+/** Secret settings are stored apart from getSettings() so they can never be sent to the browser. */
+export function getSecretSetting(key: 'ntfyToken'): string {
+  const row = getDb().prepare('SELECT value FROM settings WHERE key = ?').get(`secret:${key}`) as { value: string } | undefined;
+  return row?.value ?? '';
+}
+
+export function hasSecretSetting(key: 'ntfyToken'): boolean {
+  return getDb().prepare('SELECT 1 FROM settings WHERE key = ?').get(`secret:${key}`) !== undefined;
+}
+
+export function saveSecretSetting(key: 'ntfyToken', value: string | null) {
+  if (value === null || value === '') getDb().prepare('DELETE FROM settings WHERE key = ?').run(`secret:${key}`);
+  else getDb().prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(`secret:${key}`, value);
 }
 
 export function getSettings(): Settings {
@@ -155,6 +193,10 @@ export function getSettings(): Settings {
     lidarrQualityProfileId: num('lidarrQualityProfileId', cfg.lidarr.qualityProfileId),
     lidarrMetadataProfileId: num('lidarrMetadataProfileId', cfg.lidarr.metadataProfileId),
     haEntities: s.haEntities !== undefined ? JSON.parse(s.haEntities) : cfg.ha.entities,
+    notificationsEnabled: s.notificationsEnabled !== undefined ? s.notificationsEnabled === 'true' : cfg.ntfy.enabled,
+    ntfyUrl: (s.ntfyUrl || cfg.ntfy.url).replace(/\/+$/, ''),
+    ntfyTopicPrefix: s.ntfyTopicPrefix || cfg.ntfy.topicPrefix,
+    publicUrl: (s.publicUrl || cfg.publicUrl).replace(/\/+$/, ''),
   };
 }
 

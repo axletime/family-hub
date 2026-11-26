@@ -86,6 +86,15 @@ export function getConfig() {
         .filter(Boolean),
     },
     tmdb: { apiKey: str('TMDB_API_KEY'), region: str('TMDB_REGION', 'GB'), language: str('TMDB_LANGUAGE', 'en-GB') },
+    publicUrl: stripSlash(str('PUBLIC_URL', 'http://192.168.1.201:3000')),
+    ntfy: {
+      enabled: bool('NOTIFICATIONS_ENABLED', true),
+      url: stripSlash(str('NTFY_URL', 'https://ntfy.sh')),
+      token: str('NTFY_TOKEN'),
+      topicPrefix: str('NTFY_TOPIC_PREFIX', 'familyhub'),
+      pollMinutes: int('NOTIFY_POLL_MINUTES') ?? 5,
+    },
+    webhookSecret: str('WEBHOOK_SECRET'),
     recCacheHours: int('REC_CACHE_HOURS') ?? 6,
     requestTimeoutMs: int('SERVICE_TIMEOUT_MS') ?? 8000,
   };

@@ -34,6 +34,8 @@ The plan is to run Family Hub on the **currently unused Unraid server at `192.16
 - **My requests and All requests** pages show each request's status: *pending, approved, downloading, available, declined* (and *failed*, with the error and a Retry button). The status is updated live from the *arr libraries and queues.
 - **Everything runs server-side.** Sonarr, Radarr, Lidarr, Plex and Home Assistant are only ever called from the container. API keys and tokens never reach the browser.
 - **Recommendations.** "TV shows you may enjoy" and "Films you may enjoy" rows on the dashboard, plus a fuller **Discover** page. They're based on what's already in Sonarr and Radarr ("Because you have Shetland") plus what's trending this week. Each card has a poster, year, short overview and a **Request** button that uses the normal request flow, so the approval toggle and duplicate checks still apply. Anything already in the library or already requested is left out.
+- **Push notifications** via [ntfy](https://ntfy.sh): "your request was approved / declined / is ready to watch", and "a new request needs approval" for admins. Everyone has their own private topic and chooses which alerts they get (see [Notifications](#3-notifications-ntfy)).
+- **Automatic updates from GitHub.** Every push to `main` builds a fresh image at `ghcr.io/axletime/family-hub:latest`, which Watchtower can pull for you (see [Updating via GitHub](#updating-via-github-recommended)).
 - **Phone-friendly, installable app.** A bottom tab bar on phones (with a **More** sheet for admin pages, account and sign-out), large tap targets, iPhone notch support, and no zooming into text boxes. Add it to your home screen and it opens full-screen like an app (see *Add to your phone's home screen* below).
 - **Looks and works on any screen:** responsive for phones, tablets, desktops and TVs. Dark theme by default with a light option. Accent colour `#1B4F8A`.
 - **Demo mode** (`DEMO_MODE=true`) shows realistic mock data, so you can try the UI before connecting anything.
@@ -148,7 +150,52 @@ docker compose up -d --build
 
 > The container runs as `nobody:users` (99:100), the usual Unraid convention. If you created the appdata folder by hand as root and the container can't write to it, run `chown -R 99:100 /mnt/user/appdata/family-hub`.
 
-### Updating
+### Updating via GitHub (recommended)
+The source code lives at **https://github.com/axletime/family-hub**. Every push to `main` makes GitHub Actions build the Docker image and publish it to the GitHub Container Registry as:
+
+- `ghcr.io/axletime/family-hub:latest` (always the newest)
+- `ghcr.io/axletime/family-hub:sha-<commit>` (one per commit, handy for rolling back)
+
+You can also start a build by hand from the repo's **Actions** tab (**Build and publish Docker image › Run workflow**).
+
+**One-off: switch on the build workflow (about 1 minute).** GitHub only lets the repo owner add workflow files, so the workflow is shipped as [`deploy/docker-image.yml`](deploy/docker-image.yml) and needs adding once from the GitHub website:
+
+1. Open [`deploy/docker-image.yml`](deploy/docker-image.yml) on GitHub and click the **Copy raw file** button.
+2. Go to the repo's main page and click **Add file › Create new file**.
+3. Name it exactly `.github/workflows/docker-image.yml` (typing the `/` characters creates the folders), paste, and click **Commit changes…** to `main`.
+4. That commit starts the first build straight away. Watch it under the **Actions** tab. It takes about 3–5 minutes.
+
+**One-off: make the image downloadable.** New GHCR packages are private. After the first successful build, open **github.com/axletime → Packages → family-hub → Package settings → Change visibility → Public**. The image contains no secrets: your keys stay in `.env` on Unraid. If you'd rather keep it private, log in once on Unraid with a GitHub personal access token (classic) that has the `read:packages` scope:
+
+```bash
+docker login ghcr.io -u axletime
+```
+
+**Switch the container to the GitHub image** (run once in the Unraid terminal). Your `.env` stays where it is and your data folder is untouched:
+
+```bash
+docker pull ghcr.io/axletime/family-hub:latest
+docker rm -f family-hub
+docker run -d --name family-hub --restart unless-stopped -p 3000:3000 -v /mnt/user/appdata/family-hub-data:/data --env-file /mnt/user/appdata/family-hub-src/.env ghcr.io/axletime/family-hub:latest
+```
+
+**Automatic updates with Watchtower.** This checks once an hour and only ever touches the `family-hub` container:
+
+```bash
+docker run -d --name watchtower --restart unless-stopped -v /var/run/docker.sock:/var/run/docker.sock containrrr/watchtower family-hub --interval 3600 --cleanup
+```
+
+When a new image appears, Watchtower re-creates `family-hub` with the same ports, volume and environment and removes the old image. If the image is private, add `-v /root/.docker/config.json:/config.json` so Watchtower can use your `docker login`. If `docker logs watchtower` says the client version is too old for your Docker, add `-e DOCKER_API_VERSION=1.44`.
+
+**Manual update in one line** (no Watchtower):
+
+```bash
+docker pull ghcr.io/axletime/family-hub:latest && docker rm -f family-hub && docker run -d --name family-hub --restart unless-stopped -p 3000:3000 -v /mnt/user/appdata/family-hub-data:/data --env-file /mnt/user/appdata/family-hub-src/.env ghcr.io/axletime/family-hub:latest
+```
+
+**Rolling back:** run the same command with `:sha-<commit>` instead of `:latest` (the tags are listed on the package page).
+
+### Updating by building it yourself
 Copy the new source over the old one in `/mnt/user/appdata/family-hub-src` (keep your `.env`), then run these three commands in the Unraid terminal:
 
 ```bash
@@ -166,6 +213,69 @@ Open `http://192.168.1.201:3000` on the phone (it needs to be on your home Wi-Fi
 - **Android (Chrome):** tap the **⋮** menu › **Install app** (or **Add to Home screen**).
 
 It opens full-screen with the Family Hub icon, like a normal app. Everyone still signs in with their own PIN.
+
+---
+
+## 3. Notifications (ntfy)
+
+Family Hub can send push notifications to everyone's phone using [ntfy](https://ntfy.sh), a free, open-source notification service. No accounts, email addresses or phone numbers are involved.
+
+**Who gets what:**
+
+| Event | Who is notified |
+|---|---|
+| A request is approved | The person who asked for it |
+| A request is declined (with the reason, if one was given) | The person who asked for it |
+| A request is ready to watch or listen to | The person who asked for it |
+| A family member makes a request that needs approval | Admins |
+
+Each notification has the title, a short message, the poster (as an icon on Android and an image attachment on both platforms) and a link straight to the hub. Each notification is sent only once (this is recorded in the database). If ntfy can't be reached, the request still goes through as normal and the failure is shown under **Admin › Settings › Recent notifications**.
+
+### How "ready to watch" works
+A background check runs every 5 minutes (`NOTIFY_POLL_MINUTES`) even when nobody has the hub open. It asks Sonarr, Radarr and Lidarr whether the requested title has files yet (a film file, at least one episode file, or at least one track file). You don't need to set up anything in the *arr apps. For instant alerts you can also add the optional webhooks below.
+
+### Step 1: choose an ntfy server
+
+**Option A: self-hosted on Unraid (recommended).** Everything stays on your network. Paste this into the Unraid terminal:
+
+```bash
+docker run -d --name ntfy --restart unless-stopped -p 8080:80 \
+  -v /mnt/user/appdata/ntfy/cache:/var/cache/ntfy \
+  -v /mnt/user/appdata/ntfy/etc:/etc/ntfy \
+  -e TZ=Europe/London \
+  -e NTFY_BASE_URL=http://192.168.1.201:8080 \
+  -e NTFY_CACHE_FILE=/var/cache/ntfy/cache.db \
+  -e NTFY_ATTACHMENT_CACHE_DIR=/var/cache/ntfy/attachments \
+  -e NTFY_UPSTREAM_BASE_URL=https://ntfy.sh \
+  binwiederhier/ntfy serve
+```
+
+Then set `NTFY_URL=http://192.168.1.201:8080` in your `.env` (or under **Admin › Settings › Push notifications**). `NTFY_UPSTREAM_BASE_URL` lets the iPhone app get instant alerts from a self-hosted server. Only a "wake up" ping goes via ntfy.sh, never the message itself.
+
+**Option B: the public ntfy.sh server.** Nothing to install. Leave `NTFY_URL` as `https://ntfy.sh`. Each person's topic has a long random suffix, so nobody can guess it, but anyone who learns a topic name could read its alerts.
+
+> **Alerts away from home:** a self-hosted ntfy on `192.168.1.201` only works while the phone is on your home Wi-Fi (or VPN). For alerts anywhere, either use ntfy.sh, or expose your ntfy server securely (e.g. Tailscale/WireGuard, or a reverse proxy with HTTPS and an access token).
+
+**Optional access token:** if you lock your ntfy server down (`auth-default-access: deny-all`), create a user and token with `docker exec -it ntfy ntfy user add --role=admin familyhub` and `docker exec -it ntfy ntfy token add familyhub`. Then set `NTFY_TOKEN=tk_...` (or paste it into Admin › Settings, where it is stored server-side and never shown again). Each phone then also needs a login in the ntfy app.
+
+### Step 2: each person subscribes on their phone
+1. Install the **ntfy** app: [iPhone](https://apps.apple.com/app/ntfy/id1625396347) or Android ([Play Store](https://play.google.com/store/apps/details?id=io.heckel.ntfy) / [F-Droid](https://f-droid.org/packages/io.heckel.ntfy/)).
+2. In Family Hub, open **My account** (on a phone: **More › My account & PIN**). The **Phone notifications** card shows your private topic, a QR code and an "Open in ntfy app" link.
+3. In the ntfy app tap **+**, type the topic and, if you're self-hosting, turn on **Use another server** and enter `http://192.168.1.201:8080`.
+4. Choose which alerts you want with the toggles, then press **Send test notification**.
+
+If a topic is ever shared by mistake, press **New topic** and subscribe again.
+
+### Optional: instant "On Import" webhooks
+1. Set `WEBHOOK_SECRET` in `.env` to a long random string (e.g. `openssl rand -hex 24`) and restart the container.
+2. In Sonarr go to **Settings › Connect › + › Webhook**. Tick **On Import** (called **On File Import** in newer versions, **On Download** in older ones; **On Release Import** in Lidarr). Set:
+   - URL: `http://192.168.1.201:3000/api/webhooks/sonarr?secret=YOUR_SECRET`
+   - Method: `POST`
+3. Do the same in Radarr (`/api/webhooks/radarr`) and Lidarr (`/api/webhooks/lidarr`). If you'd rather not put the secret in the URL, leave `?secret=` off and put the secret in the webhook's **Password** field instead (any username).
+4. Press **Test**. It should succeed. The background check still runs as a safety net.
+
+### Demo mode
+With `DEMO_MODE=true`, nothing is sent. Each notification is written to the container log (`docker logs family-hub`) and listed as "Logged (demo)" in Admin › Settings.
 
 ---
 
@@ -211,6 +321,13 @@ All settings are environment variables. See `.env.example` for the full annotate
 | `TMDB_API_KEY` | – | Optional. Better recommendations (see *TMDB* above) |
 | `TMDB_REGION` / `TMDB_LANGUAGE` | `GB` / `en-GB` | Region and language for TMDB results |
 | `REC_CACHE_HOURS` | `6` | How long recommendations are cached |
+| `PUBLIC_URL` | `http://192.168.1.201:3000` | Hub address used for links in notifications |
+| `NOTIFICATIONS_ENABLED` | `true` | Master switch (also in Admin › Settings) |
+| `NTFY_URL` | `https://ntfy.sh` | ntfy server, e.g. `http://192.168.1.201:8080` |
+| `NTFY_TOKEN` | – | Optional ntfy access token (`tk_...`) or `user:password` |
+| `NTFY_TOPIC_PREFIX` | `familyhub` | Start of each person's topic name |
+| `NOTIFY_POLL_MINUTES` | `5` | How often to check for finished downloads |
+| `WEBHOOK_SECRET` | – | Enables the optional *arr import webhooks |
 | `DATA_DIR` | `/data` | Where the SQLite database lives |
 
 ---
@@ -232,6 +349,7 @@ All settings are environment variables. See `.env.example` for the full annotate
 - **Forgotten admin PIN.** If another admin exists, they can reset it. Otherwise stop the container, delete `/mnt/user/appdata/family-hub/family-hub.db*`, set `ADMIN_PIN` and start again. This removes all profiles and requests.
 - **No recommendations, or only TV ones.** Check Admin › Settings › TMDB. Without a key, films need Radarr to be connected. A wrong key shows as a hint on the Discover page (for admins), and TV falls back to TVmaze.
 - **The phone layout looks old after updating.** Close the home-screen app fully and reopen it, or refresh the page in the browser.
+- **No notifications arrive.** Press **Send test notification** on My account. An error there (e.g. `ntfy unreachable (ECONNREFUSED)` or `HTTP 401`) means the server address or token is wrong. If the test says *sent* but nothing arrives, check the phone is subscribed to exactly the same topic and server, and that notifications are allowed for the ntfy app. With a self-hosted server, the phone must be on your home network.
 - **"Home Assistant is not configured".** Set both `HA_URL` and `HA_TOKEN`, then restart the container.
 
 ---
